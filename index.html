@@ -196,7 +196,7 @@
         window.renderOrderList = (id, items) => { const container = document.getElementById(id); container.innerHTML = items.map((it, i) => `<div class="flex items-center justify-between p-2 bg-white border rounded-lg shadow-sm"><span>${it}</span><div class="flex gap-1"><button onclick="moveIndMove(${i}, -1)" class="p-1 bg-slate-100 rounded text-[10px]">↑</button><button onclick="moveIndMove(${i}, 1)" class="p-1 bg-slate-100 rounded text-[10px]">↓</button></div></div>`).join(''); };
         window.moveIndMove = (i, d) => { const target = i + d; if (target < 0 || target >= indOrderState.length) return; [indOrderState[i], indOrderState[target]] = [indOrderState[target], indOrderState[i]]; renderOrderList('ind-order-box', indOrderState); };
         window.selectAvatar = (el, em) => { document.querySelectorAll('.avatar-option').forEach(o => o.classList.remove('selected')); el.classList.add('selected'); selectedEmoji = em; };
-        window.renderQuestionEditorFields = () => { const type = document.getElementById('m-type').value; const container = document.getElementById('m-opts'); container.innerHTML = ''; if (type === 'truefalse' || type === 'yesno') { const labels = type === 'yesno' ? ['Да', 'Не'] : ['Вярно', 'Грешно']; container.innerHTML = labels.map((l, i) => `<label class="flex items-center gap-2 p-2 bg-slate-50 border rounded-xl cursor-pointer"><input type="radio" name="m-correct" value="${i}" ${i === 0 ? 'checked' : ''}><span class="font-bold text-sm">${l}</span></label>`).join(''); } else if (type === 'order') container.innerHTML = [0, 1, 2, 3].map(i => `<input type="text" id="m-order-${i}" placeholder="Елемент ${i+1}" class="w-full px-3 py-2 bg-slate-50 border rounded-xl mb-2 text-sm font-bold">`).join(''); else if (type === 'short') container.innerHTML = `<input type="text" id="m-short-answers" placeholder="напр: ДНК, DNA" class="w-full px-3 py-2 bg-slate-50 border rounded-xl text-sm font-bold">`; else if (type === 'emoji') container.innerHTML = `<p class="text-[11px] text-slate-500 italic">Свободен отговор с емотикон.</p>`; else container.innerHTML = [0, 1, 2].map(i => `<div class="flex items-center gap-2 mb-2"><input type="${type === 'multi' ? 'checkbox' : 'radio'}" name="m-correct" value="${i}" ${i === 0 ? 'checked' : ''}><input type="text" id="m-opt-${i}" placeholder="Опция ${i+1}" class="flex-1 px-3 py-2 bg-slate-50 border rounded-xl text-sm font-bold"></div>`).join(''); };
+        window.renderQuestionEditorFields = () => { const type = document.getElementById('m-type').value; const container = document.getElementById('m-opts'); container.innerHTML = ''; if (type === 'truefalse' || type === 'yesno') { const labels = type === 'yesno' ? ['Да', 'Не'] : ['Вярно', 'Грешно']; container.innerHTML = labels.map((l, i) => `<label class="flex items-center gap-2 p-2 bg-slate-50 border rounded-xl cursor-pointer"><input type="radio" name="m-correct" value="${i}" ${i === 0 ? 'checked' : ''}><span class="font-bold text-sm">${l}</span></label>`).join(''); } else if (type === 'order') container.innerHTML = [0, 1, 2, 3].map(i => `<input type="text" id="m-order-${i}" placeholder="Елемент ${i+1}" class="w-full px-3 py-2 bg-slate-50 border rounded-xl mb-2 text-sm font-bold">`).join(''); else if (type === 'short') container.innerHTML = `<input type="text" id="m-short-answers" placeholder="напр: ДНК, DNA" class="w-full px-3 py-2 bg-slate-50 border rounded-xl text-sm font-bold">`; else if (type === 'emoji') container.innerHTML = `<p class="text-[11px] text-slate-500 italic">Свободен отговор с емотикон.</p>`; else container.innerHTML = [0, 1, 2].map(i => `<div class="flex items-center gap-2 mb-2"><input type="${type === 'multi' ? 'checkbox' : 'radio'}" name="m-correct" value="${i}" ${i === 0 ? 'checked' : ''}><input type="text" id="opt-${i}" placeholder="Опция ${i+1}" class="flex-1 px-3 py-2 bg-slate-50 border rounded-xl text-sm font-bold"></div>`).join(''); };
     </script>
 
     <style>
@@ -227,7 +227,7 @@
         <!-- WELCOME SCREEN -->
         <div id="screen-welcome" class="space-y-12 py-10 text-center animate-pop">
             <div class="space-y-4">
-                <div class="inline-flex p-4 bg-indigo-600 rounded-3xl text-white shadow-xl">
+                <div class="inline-flex p-4 bg-indigo-600 rounded-3xl text-white shadow-xl mb-2">
                     <i data-lucide="graduation-cap" class="w-10 h-10"></i>
                 </div>
                 <h1 class="text-5xl font-black text-slate-900">VideoQuiz <span class="text-indigo-600">Ultimate</span></h1>
@@ -235,11 +235,8 @@
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-left">
-                <!-- Individual Student Mode -->
                 <div class="custom-card p-8 space-y-6 shadow-sm border-b-4 border-slate-900">
-                    <div class="bg-slate-100 text-slate-900 w-12 h-12 rounded-2xl flex items-center justify-center">
-                        <i data-lucide="book-open-check"></i>
-                    </div>
+                    <div class="bg-slate-100 text-slate-900 w-12 h-12 rounded-2xl flex items-center justify-center"><i data-lucide="book-open-check"></i></div>
                     <h2 class="text-xl font-bold">Индивидуален урок</h2>
                     <div class="space-y-3">
                         <input type="text" id="ind-student-name" placeholder="Твоето име..." class="w-full px-4 py-3 bg-slate-50 border rounded-xl font-bold outline-none focus:ring-2 ring-indigo-500/20">
@@ -247,12 +244,8 @@
                     </div>
                     <button onclick="startIndividual()" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold hover:bg-black shadow-lg uppercase text-xs tracking-widest">ЗАПОЧНИ</button>
                 </div>
-
-                <!-- Live Student Mode -->
                 <div class="custom-card p-8 space-y-6 shadow-sm border-b-4 border-emerald-500">
-                    <div class="bg-emerald-100 text-emerald-600 w-12 h-12 rounded-2xl flex items-center justify-center">
-                        <i data-lucide="users-round"></i>
-                    </div>
+                    <div class="bg-emerald-100 text-emerald-600 w-12 h-12 rounded-2xl flex items-center justify-center"><i data-lucide="users-round"></i></div>
                     <h2 class="text-xl font-bold">Ученик (На живо)</h2>
                     <div class="space-y-3">
                         <input type="text" id="live-student-name" placeholder="Име..." class="w-full px-4 py-3 bg-slate-50 border rounded-xl font-bold outline-none">
@@ -268,12 +261,8 @@
                     </div>
                     <button onclick="joinLiveSession()" class="w-full py-4 bg-emerald-500 text-white rounded-2xl font-bold hover:bg-emerald-600 shadow-lg uppercase text-xs tracking-widest">ВКЛЮЧИ СЕ</button>
                 </div>
-
-                <!-- Teacher Controls -->
                 <div class="custom-card p-8 space-y-6 shadow-sm border-b-4 border-indigo-500">
-                    <div class="bg-indigo-100 text-indigo-600 w-12 h-12 rounded-2xl flex items-center justify-center">
-                        <i data-lucide="presentation"></i>
-                    </div>
+                    <div class="bg-indigo-100 text-indigo-600 w-12 h-12 rounded-2xl flex items-center justify-center"><i data-lucide="presentation"></i></div>
                     <h2 class="text-xl font-bold">За учителя</h2>
                     <div class="space-y-3">
                         <button onclick="openLiveHost()" class="w-full py-5 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 shadow-lg uppercase text-xs tracking-widest">ХОСТВАНЕ НА ЖИВО</button>
@@ -288,6 +277,7 @@
 
         <!-- TEACHER LIVE DASHBOARD -->
         <div id="screen-live-host" class="hidden space-y-6 animate-pop">
+            <!-- Simplified Header -->
             <div class="flex flex-wrap items-center justify-between gap-4">
                 <div class="flex items-center gap-3">
                     <div class="bg-indigo-600 text-white px-5 py-2 rounded-2xl font-black text-2xl shadow-lg border-b-4 border-indigo-800" id="host-pin">----</div>
@@ -296,45 +286,50 @@
                         <div class="text-xs font-bold text-slate-600 flex items-center gap-1"><i data-lucide="users" class="w-3 h-3"></i> <span id="host-participant-count">0</span></div>
                     </div>
                 </div>
-                <div class="flex items-center gap-4">
-                    <div class="flex flex-col items-end">
-                        <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Успех</span>
-                        <div class="text-xl font-black text-emerald-600" id="class-average">0%</div>
-                    </div>
-                    <div class="h-10 w-px bg-slate-200"></div>
-                </div>
                 <div class="flex gap-2 bg-white p-2 rounded-2xl shadow-sm border flex-1 md:flex-none">
                     <input type="text" id="host-quiz-code" placeholder="Код на урок..." class="w-32 px-3 py-2 bg-slate-50 rounded-xl font-bold text-xs outline-none uppercase tracking-widest">
                     <button onclick="setupLiveHostQuiz()" class="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] uppercase tracking-widest">ЗАРЕДИ</button>
+                    <button onclick="switchScreen('welcome')" class="bg-slate-50 p-2 rounded-lg text-slate-400 hover:text-slate-600"><i data-lucide="home" class="w-4 h-4"></i></button>
                 </div>
             </div>
-            <div id="host-player-area" class="hidden space-y-6">
-                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                    <div class="lg:col-span-8 space-y-6">
-                        <div class="video-container"><div id="host-video"></div></div>
-                        <div class="custom-card shadow-sm overflow-hidden flex flex-col border-b-4 border-indigo-100">
-                            <div class="p-4 bg-slate-50/50 border-b flex items-center justify-between">
-                                <h3 class="font-black text-[10px] uppercase text-slate-500 tracking-widest flex items-center gap-2"><i data-lucide="zap" class="w-3 h-3 text-indigo-500"></i> Резултати на живо</h3>
-                                <div class="text-[10px] font-black text-indigo-600" id="host-timer">00:00</div>
-                            </div>
-                            <div class="max-h-[350px] overflow-y-auto custom-scrollbar">
-                                <table class="results-table">
-                                    <thead><tr><th class="text-left">Ученик</th><th>Резултат</th><th>Статус</th></tr></thead>
-                                    <tbody id="host-results-body"></tbody>
-                                </table>
-                            </div>
+
+            <!-- New Grid Layout -->
+            <div id="host-player-area" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-8">
+                <!-- Video Section (Left) -->
+                <div class="lg:col-span-8 space-y-4">
+                    <div class="video-container"><div id="host-video"></div></div>
+                    
+                    <!-- Controls Bar (Under Video) -->
+                    <div class="bg-white p-4 rounded-3xl border shadow-md flex items-center justify-between gap-4">
+                        <div class="flex flex-col">
+                            <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Текущо време</span>
+                            <div class="text-2xl font-mono font-black text-indigo-600" id="host-timer">00:00</div>
                         </div>
+                        <button onclick="endLiveSession()" class="flex-1 py-4 bg-rose-500 text-white rounded-2xl font-black text-xs uppercase shadow-lg hover:bg-rose-600 transition-all tracking-widest flex items-center justify-center gap-2">
+                            <i data-lucide="power" class="w-4 h-4"></i> КРАЙ НА УРОКА
+                        </button>
                     </div>
-                    <div class="lg:col-span-4 space-y-4">
-                        <div class="custom-card p-6 bg-rose-50 border-rose-100 text-center space-y-4">
-                            <i data-lucide="power" class="w-8 h-8 mx-auto text-rose-500"></i>
-                            <h4 class="font-black text-xs text-rose-900 uppercase tracking-widest">Управление на сесия</h4>
-                            <p class="text-[10px] text-rose-600 leading-relaxed font-medium">Край на урока ще спре видеото и ще прехвърли учениците към предаване на отговорите.</p>
-                            <button onclick="endLiveSession()" class="w-full py-4 bg-rose-500 text-white rounded-2xl font-black text-xs uppercase shadow-lg hover:bg-rose-600 transition-all">КРАЙ НА УРОКА</button>
+                </div>
+
+                <!-- Statistics & Results (Right) -->
+                <div class="lg:col-span-4 space-y-6">
+                    <!-- Class Success Stats -->
+                    <div class="custom-card p-6 shadow-sm border-t-4 border-emerald-500 text-center">
+                        <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Успех на класа</span>
+                        <div class="text-5xl font-black text-emerald-600" id="class-average">0%</div>
+                        <p class="text-[9px] text-slate-400 mt-4 italic">Среден резултат на всички свързани участници в реално време.</p>
+                    </div>
+
+                    <!-- Live Results List -->
+                    <div class="custom-card shadow-sm overflow-hidden flex flex-col border-b-4 border-indigo-100 h-[400px]">
+                        <div class="p-4 bg-slate-50/50 border-b flex items-center justify-between">
+                            <h3 class="font-black text-[10px] uppercase text-slate-500 tracking-widest flex items-center gap-2"><i data-lucide="zap" class="w-3 h-3 text-indigo-500"></i> Резултати</h3>
                         </div>
-                        <div class="custom-card p-6 border-slate-100 text-center">
-                            <i data-lucide="info" class="w-6 h-6 mx-auto text-slate-400 mb-2"></i>
-                            <p class="text-[10px] text-slate-400 italic">Видео плейърът ще паузира автоматично на всеки въпрос, за да даде време на класа.</p>
+                        <div class="flex-1 overflow-y-auto custom-scrollbar">
+                            <table class="results-table">
+                                <thead><tr><th class="text-left">Ученик</th><th>Точки</th><th>Статус</th></tr></thead>
+                                <tbody id="host-results-body"></tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
