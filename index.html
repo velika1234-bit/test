@@ -6,6 +6,8 @@
     <title>VideoQuiz Ultimate</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- YouTube IFrame API -->
+    <script src="https://www.youtube.com/iframe_api"></script>
     
     <!-- Modern Firebase SDKs -->
     <script type="module">
@@ -15,7 +17,9 @@
 
         // Global state and configuration
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'ultimate-video-quiz-v11';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+        
+        // Use environment config or provide a default structure for external hosting
+        let firebaseConfig = {
             apiKey: "",
             authDomain: "gen-lang-client-0744005778.firebaseapp.com",
             projectId: "gen-lang-client-0744005778",
@@ -24,9 +28,22 @@
             appId: "1:314639861220:web:a6fb919ce5413f459773f1"
         };
 
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const auth = getAuth(app);
+        if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+            try {
+                firebaseConfig = JSON.parse(__firebase_config);
+            } catch(e) { console.error("Config parse error", e); }
+        }
+
+        // Initialize Firebase services
+        let app, db, auth;
+        try {
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+        } catch (e) {
+            console.error("Firebase init failed:", e);
+            hideLoader(); // Skip loader if firebase fails
+        }
 
         // App variables
         let user = null;
@@ -36,17 +53,22 @@
         let sessionID = "", liveActiveQIdx = -1;
         let unsubscribeParticipants = null, unsubscribeSession = null;
         let liveScore = 0, liveTotal = 0, totalScorable = 0;
-        let answerLog = [], liveAnswerLog = [];
-        let indOrderState = [], liveOrderState = [];
-        let indTimerInterval = null, indTimerTimeout = null;
-        let liveTimerInterval = null, liveTimerTimeout = null;
+        let indOrderState = [];
+        let indTimerInterval = null, liveTimerInterval = null;
         let indQuestionLocked = false, liveQuestionLocked = false;
         let editQuestionIndex = -1;
         const EMOJI_OPTIONS = ['😀', '😐', '😢', '😡', '😍'];
 
-        // --- AUTH INITIALIZATION (Rule 3) ---
+        function hideLoader() {
+            const loader = document.getElementById('auth-loader');
+            if (loader) loader.classList.add('hidden');
+        }
+
+        // --- AUTH INITIALIZATION ---
         const initAuth = async () => {
+            if (!auth) return;
             try {
+                // Check for custom token from environment
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                     await signInWithCustomToken(auth, __initial_auth_token);
                 } else {
@@ -55,32 +77,24 @@
             } catch (error) {
                 console.error("Auth error:", error);
                 document.getElementById('auth-warning').classList.remove('hidden');
-                // Failsafe: Hide loader even on error so UI is accessible
-                document.getElementById('auth-loader').classList.add('hidden');
+                hideLoader();
             }
         };
 
-        // Watch auth state
-        onAuthStateChanged(auth, (u) => {
-            user = u;
-            if (user) {
-                document.getElementById('auth-loader').classList.add('hidden');
-                document.getElementById('auth-warning').classList.add('hidden');
-            }
-        });
+        if (auth) {
+            onAuthStateChanged(auth, (u) => {
+                user = u;
+                if (user) {
+                    hideLoader();
+                    document.getElementById('auth-warning').classList.add('hidden');
+                }
+            });
+            initAuth();
+        }
 
-        // Failsafe timeout for the blue screen
-        setTimeout(() => {
-            const loader = document.getElementById('auth-loader');
-            if (!loader.classList.contains('hidden')) {
-                loader.classList.add('hidden');
-                document.getElementById('auth-warning').classList.remove('hidden');
-            }
-        }, 6000);
+        // Safety timeout for the loading screen (3 seconds is enough)
+        setTimeout(hideLoader, 3500);
 
-        initAuth();
-
-        // Guard for database operations
         const ensureUser = () => {
             if (!user) {
                 console.warn("Operation skipped: No authenticated user.");
@@ -116,7 +130,7 @@
             
             clearQuestionTimers('ind');
             clearQuestionTimers('live');
-            lucide.createIcons();
+            if (window.lucide) lucide.createIcons();
         };
 
         // --- EDITOR LOGIC ---
@@ -131,6 +145,9 @@
         };
 
         function initEditorPlayer(id) {
+            if (typeof YT === 'undefined' || !YT.Player) {
+                return alert("YouTube библиотеката още се зарежда. Моля изчакайте секунда.");
+            }
             player = new YT.Player('player', {
                 videoId: id,
                 playerVars: { 'enablejsapi': 1, 'origin': window.location.origin },
@@ -206,7 +223,8 @@
                 q.options = items; q.order = items;
             } else if (type === 'truefalse' || type === 'yesno') {
                 q.options = type === 'yesno' ? ['Да', 'Не'] : ['Вярно', 'Грешно'];
-                q.correct = parseInt(document.querySelector('input[name="m-correct"]:checked').value);
+                const sel = document.querySelector('input[name="m-correct"]:checked');
+                q.correct = sel ? parseInt(sel.value) : 0;
             } else if (type === 'emoji') {
                 q.options = EMOJI_OPTIONS; q.noScore = true;
             } else {
@@ -242,7 +260,7 @@
                         <button onclick="delQ(${i})" class="p-2 text-rose-500 hover:bg-white rounded-lg"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                     </div>
                 </div>`).join('') : '<p class="text-center py-10 text-slate-400 italic">Няма въпроси</p>';
-            lucide.createIcons();
+            if (window.lucide) lucide.createIcons();
         };
 
         window.delQ = (i) => { questions.splice(i, 1); renderEditorQuestions(); };
@@ -257,6 +275,7 @@
         };
 
         window.exportQuiz = () => {
+            if (!player) return alert("Заредете видео първо!");
             const data = { v: player.getVideoData().video_id, q: questions };
             const code = btoa(unescape(encodeURIComponent(JSON.stringify(data))));
             document.getElementById('export-textarea').value = code;
@@ -272,13 +291,14 @@
                 currentQuiz = JSON.parse(decodeURIComponent(escape(atob(code))));
                 quizHash = code.substring(0, 16);
                 switchScreen('solve');
-                scoreCount = 0; currentQIndex = -1; answerLog = [];
+                scoreCount = 0; currentQIndex = -1;
                 totalScorable = currentQuiz.q.filter(q => !q.noScore).length;
                 initSolvePlayer();
             } catch(e) { alert("Грешен код!"); }
         };
 
         function initSolvePlayer() {
+            if (typeof YT === 'undefined' || !YT.Player) return setTimeout(initSolvePlayer, 500);
             solvePlayer = new YT.Player('solve-player', {
                 videoId: currentQuiz.v,
                 playerVars: { 'autoplay': 1, 'origin': window.location.origin },
@@ -315,10 +335,10 @@
                 container.innerHTML = `<input type="text" id="ind-short" class="w-full p-4 bg-slate-50 border rounded-2xl mb-4 font-bold outline-none">
                     <button onclick="submitIndShort()" class="w-full p-4 bg-indigo-600 text-white rounded-2xl font-bold">ОТГОВОРИ</button>`;
             } else if (q.type === 'order') {
-                indOrderState = shuffleArray([...q.options]);
+                window.indOrderState = shuffleArray([...q.options]);
                 container.innerHTML = `<div id="ind-order-box" class="space-y-2 mb-4"></div>
                     <button onclick="submitIndOrder()" class="w-full p-4 bg-indigo-600 text-white rounded-2xl font-bold">ГОРОВО</button>`;
-                renderOrderList('ind-order-box', indOrderState, 'moveInd');
+                renderOrderList('ind-order-box', window.indOrderState, 'moveInd');
             } else {
                 container.innerHTML = q.options.map((o, i) => `
                     <button onclick="submitInd(${i})" class="w-full p-4 bg-slate-50 border-2 rounded-2xl mb-2 font-bold hover:border-indigo-500">${o}</button>`).join('');
@@ -331,7 +351,7 @@
             if (indQuestionLocked) return;
             const q = currentQuiz.q[currentQIndex];
             const isCorrect = q.correct === idx;
-            completeIndAnswer(isCorrect, { answer: q.options[idx] });
+            completeIndAnswer(isCorrect);
         };
 
         window.submitIndShort = () => {
@@ -340,21 +360,20 @@
             const input = document.getElementById('ind-short');
             const val = input ? input.value.trim().toLowerCase() : "";
             const isCorrect = q.correctText.some(t => t.toLowerCase() === val);
-            completeIndAnswer(isCorrect, { answer: val });
+            completeIndAnswer(isCorrect);
         };
 
         window.submitIndOrder = () => {
             if (indQuestionLocked) return;
             const q = currentQuiz.q[currentQIndex];
-            const isCorrect = q.order.every((val, i) => val === indOrderState[i]);
-            completeIndAnswer(isCorrect, { order: [...indOrderState] });
+            const isCorrect = q.order.every((val, i) => val === window.indOrderState[i]);
+            completeIndAnswer(isCorrect);
         };
 
-        function completeIndAnswer(isCorrect, detail) {
+        function completeIndAnswer(isCorrect) {
             indQuestionLocked = true;
             clearQuestionTimers('ind');
             if (isCorrect === true) scoreCount++;
-            answerLog.push({ index: currentQIndex, correct: isCorrect, ...detail });
             document.getElementById('q-overlay').classList.add('hidden');
             document.getElementById('q-overlay').classList.remove('flex');
             document.getElementById('solve-progress').innerText = `${currentQIndex + 1} / ${currentQuiz.q.length}`;
@@ -368,7 +387,7 @@
 
         // --- LIVE HOSTING ---
         window.openLiveHost = async () => {
-            if (!ensureUser()) return;
+            if (!ensureUser()) return alert("Моля изчакайте свързване с облака...");
             sessionID = Math.floor(1000 + Math.random() * 9000).toString();
             switchScreen('live-host');
             document.getElementById('host-pin').innerText = `PIN: ${sessionID}`;
@@ -379,7 +398,7 @@
                 listenParticipants();
             } catch (e) {
                 console.error("Firestore Error:", e);
-                alert("Възникна грешка при създаване на сесията.");
+                alert("Проблем със създаването на сесията. Опитайте пак.");
             }
         };
 
@@ -412,6 +431,7 @@
         };
 
         function initHostPlayer() {
+            if (typeof YT === 'undefined' || !YT.Player) return setTimeout(initHostPlayer, 500);
             hostPlayer = new YT.Player('host-video', {
                 videoId: currentQuiz.v,
                 playerVars: { 'controls': 1, 'origin': window.location.origin },
@@ -443,7 +463,7 @@
             const pin = document.getElementById('live-pin').value.trim();
             studentNameValue = document.getElementById('live-student-name').value.trim();
             if (!pin || !studentNameValue) return alert("Попълни име и PIN!");
-            if (!ensureUser()) return alert("Изчакай свързване...");
+            if (!ensureUser()) return alert("Изчакай свързване с облака...");
             
             sessionID = pin;
             switchScreen('live-client');
@@ -477,7 +497,7 @@
         function showLiveQ(q, idx) {
             if (liveActiveQIdx === idx) return;
             liveActiveQIdx = idx;
-            liveCurrentQuestion = q;
+            window.liveCurrentQuestion = q;
             liveQuestionLocked = false;
             toggleClient('question');
             document.getElementById('live-q-text-client').innerText = q.text;
@@ -491,9 +511,9 @@
             if (liveQuestionLocked) return;
             liveQuestionLocked = true;
             clearQuestionTimers('live');
-            const isCorrect = liveCurrentQuestion.correct === idx;
+            const isCorrect = window.liveCurrentQuestion.correct === idx;
             if (isCorrect) liveScore++;
-            if (!liveCurrentQuestion.noScore) liveTotal++;
+            if (!window.liveCurrentQuestion.noScore) liveTotal++;
             
             if (ensureUser()) {
                 const pRef = doc(db, 'artifacts', appId, 'public', 'data', 'participants', user.uid);
@@ -505,7 +525,7 @@
             const icon = document.getElementById('live-feedback-icon');
             icon.className = `w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 text-white shadow-lg ${isCorrect ? 'bg-emerald-500' : 'bg-rose-500'}`;
             icon.innerHTML = `<i data-lucide="${isCorrect ? 'check' : 'x'}" class="w-10 h-10"></i>`;
-            lucide.createIcons();
+            if (window.lucide) lucide.createIcons();
         };
 
         // --- TIMER UTILS ---
@@ -521,7 +541,7 @@
                 if (rem <= 0) {
                     clearInterval(interval);
                     if (mode === 'live') submitLive(-1);
-                    else completeIndAnswer(false, { timeout: true });
+                    else completeIndAnswer(false);
                 }
             }, 1000);
             if (mode === 'live') liveTimerInterval = interval;
@@ -549,9 +569,9 @@
         };
         window.moveIndMove = (i, d) => {
             const target = i + d;
-            if (target < 0 || target >= indOrderState.length) return;
-            [indOrderState[i], indOrderState[target]] = [indOrderState[target], indOrderState[i]];
-            renderOrderList('ind-order-box', indOrderState, 'moveInd');
+            if (target < 0 || target >= window.indOrderState.length) return;
+            [window.indOrderState[i], window.indOrderState[target]] = [window.indOrderState[target], window.indOrderState[i]];
+            renderOrderList('ind-order-box', window.indOrderState, 'moveInd');
         };
 
         // Global exposing
@@ -584,9 +604,10 @@
     <div id="auth-loader" class="fixed inset-0 bg-indigo-600 z-[200] flex flex-col items-center justify-center text-white space-y-4">
         <div class="animate-spin rounded-full h-12 w-12 border-4 border-white/20 border-t-white"></div>
         <p class="font-bold tracking-widest animate-pulse uppercase text-sm">Подготовка на средата...</p>
+        <button onclick="document.getElementById('auth-loader').classList.add('hidden')" class="mt-8 text-[10px] uppercase opacity-50 hover:opacity-100 underline">Влез без облачна връзка</button>
     </div>
     <div id="auth-warning" class="hidden fixed top-4 right-4 z-[210] bg-amber-100 text-amber-900 border border-amber-200 px-4 py-3 rounded-2xl shadow-lg text-sm font-semibold">
-        Проблем с връзката. Моля опреснете страницата.
+        Връзката с облака се забавя. Използвайте индивидуални уроци.
     </div>
 
     <div id="app" class="max-w-6xl mx-auto p-4 md:p-8">
