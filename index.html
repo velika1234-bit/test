@@ -36,7 +36,7 @@
         let currentQIndex = -1, scoreCount = 0, studentNameValue = "", selectedEmoji = "🐱";
         let sessionID = "", liveActiveQIdx = -1;
         let unsubscribeParticipants = null, unsubscribeSession = null;
-        let liveScore = 0, liveTotal = 0, totalScorable = 0;
+        let liveScore = 0, liveTotal = 0;
         let indOrderState = [];
         let indTimerInterval = null, liveTimerInterval = null;
         let indQuestionLocked = false, liveQuestionLocked = false;
@@ -83,7 +83,10 @@
 
         initAuth();
         
-        setTimeout(() => document.getElementById('auth-loader').classList.add('hidden'), 5000);
+        setTimeout(() => {
+            const loader = document.getElementById('auth-loader');
+            if(loader) loader.classList.add('hidden');
+        }, 5000);
 
         const ensureFirebase = (featureName) => {
             if (!firebaseReady || !user) {
@@ -170,18 +173,18 @@
             if (type === 'short') {
                 q.correctText = document.getElementById('m-short-answers').value.split(',').map(v => v.trim()).filter(Boolean);
             } else if (type === 'order') {
-                q.options = [0,1,2,3].map(i => document.getElementById('m-order-'+i).value.trim()).filter(Boolean);
+                q.options = [0, 1, 2, 3].map(i => document.getElementById('m-order-' + i).value.trim()).filter(Boolean);
                 q.order = [...q.options];
             } else if (type === 'emoji') {
                 q.options = EMOJI_OPTIONS; q.noScore = true;
             } else {
-                q.options = [0,1,2].map(i => document.getElementById('m-opt-'+i).value.trim()).filter(Boolean);
+                q.options = [0, 1, 2].map(i => document.getElementById('m-opt-' + i).value.trim()).filter(Boolean);
                 if (type === 'multi') q.correct = Array.from(document.querySelectorAll('input[name="m-correct"]:checked')).map(el => parseInt(el.value));
                 else q.correct = parseInt(document.querySelector('input[name="m-correct"]:checked')?.value || 0);
             }
 
             if (editQuestionIndex >= 0) questions[editQuestionIndex] = q; else questions.push(q);
-            questions.sort((a,b) => a.time - b.time);
+            questions.sort((a, b) => a.time - b.time);
             renderEditorQuestions();
             document.getElementById('modal-q').classList.add('hidden');
         };
@@ -235,14 +238,59 @@
             if (!user) return;
             const qRef = collection(db, 'artifacts', appId, 'public', 'data', 'participants');
             unsubscribeParticipants = onSnapshot(qRef, (snap) => {
-                const list = snap.docs.map(d => d.data()).filter(p => p.sessionId === sessionID);
-                document.getElementById('host-participant-count').innerText = list.length;
-                document.getElementById('host-participant-list').innerHTML = list.map(p => `
-                    <div class="p-3 bg-white border rounded-2xl text-center min-w-[80px] animate-pop">
-                        <div class="text-2xl">${p.avatar}</div>
-                        <div class="text-[10px] font-black uppercase truncate">${p.name}</div>
+                const participants = snap.docs.map(d => d.data()).filter(p => p.sessionId === sessionID);
+                
+                // Update Badge List (UI)
+                document.getElementById('host-participant-count').innerText = participants.length;
+                document.getElementById('host-participant-list').innerHTML = participants.map(p => `
+                    <div class="p-2 bg-white border rounded-xl text-center min-w-[70px] animate-pop relative">
+                        <div class="text-xl">${p.avatar}</div>
+                        <div class="text-[9px] font-black uppercase truncate">${p.name}</div>
+                        ${p.finished ? '<div class="absolute -top-1 -right-1 bg-emerald-500 text-white p-0.5 rounded-full"><i data-lucide="check" class="w-2 h-2"></i></div>' : ''}
                     </div>`).join('');
+                
+                // Update Detailed Results Table
+                renderResultsTable(participants);
+                lucide.createIcons();
             });
+        }
+
+        function renderResultsTable(participants) {
+            const container = document.getElementById('host-results-body');
+            if(!container) return;
+
+            if (participants.length === 0) {
+                container.innerHTML = '<tr><td colspan="3" class="text-center py-4 text-slate-400 italic">Няма свързани ученици</td></tr>';
+                return;
+            }
+
+            // Sort by score
+            const sorted = [...participants].sort((a, b) => b.score - a.score);
+
+            container.innerHTML = sorted.map(p => `
+                <tr class="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                    <td class="py-3 px-2 flex items-center gap-2">
+                        <span class="text-lg">${p.avatar}</span>
+                        <span class="font-bold text-slate-700">${p.name}</span>
+                    </td>
+                    <td class="py-3 px-2 text-center">
+                        <span class="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full font-black text-xs">
+                            ${p.score} / ${p.total || 0}
+                        </span>
+                    </td>
+                    <td class="py-3 px-2 text-center">
+                        ${p.finished 
+                            ? '<span class="text-emerald-500 font-bold text-[10px] uppercase">Завършил</span>' 
+                            : '<span class="text-amber-500 font-bold text-[10px] uppercase animate-pulse">Играе...</span>'}
+                    </td>
+                </tr>
+            `).join('');
+
+            // Class Average Stats
+            const totalScore = participants.reduce((acc, p) => acc + p.score, 0);
+            const totalPossible = participants.reduce((acc, p) => acc + (p.total || 0), 0);
+            const avg = totalPossible > 0 ? Math.round((totalScore / totalPossible) * 100) : 0;
+            document.getElementById('class-average').innerText = `${avg}%`;
         }
 
         window.setupLiveHostQuiz = async () => {
@@ -251,10 +299,10 @@
             try {
                 currentQuiz = JSON.parse(decodeURIComponent(escape(atob(code))));
                 const sessionRef = doc(db, 'artifacts', appId, 'public', 'data', 'sessions', sessionID);
-                await updateDoc(sessionRef, { hash: code.substring(0,10), status: 'active' });
+                await updateDoc(sessionRef, { hash: code.substring(0, 10), status: 'active' });
                 document.getElementById('host-player-area').classList.remove('hidden');
                 initHostPlayer();
-            } catch(e) { alert("Грешен код на урока!"); }
+            } catch (e) { alert("Грешен код на урока!"); }
         };
 
         function initHostPlayer() {
@@ -288,7 +336,7 @@
             try {
                 const sessionRef = doc(db, 'artifacts', appId, 'public', 'data', 'sessions', sessionID);
                 await updateDoc(sessionRef, { status: 'finishing' });
-                alert("Урокът е приключен. Очаквайте отговорите на учениците.");
+                alert("Урокът е приключен. Очаквайте отговорите на учениците в таблицата.");
             } catch (e) {
                 console.error(e);
             }
@@ -303,9 +351,8 @@
                 currentQuiz = JSON.parse(decodeURIComponent(escape(atob(code))));
                 switchScreen('solve');
                 scoreCount = 0; currentQIndex = -1;
-                totalScorable = currentQuiz.q.filter(q => !q.noScore).length;
                 initSolvePlayer();
-            } catch(e) { alert("Грешен код на урока!"); }
+            } catch (e) { alert("Грешен код на урока!"); }
         };
 
         function initSolvePlayer() {
@@ -393,6 +440,7 @@
 
         function finishIndQuiz() {
             switchScreen('finish');
+            const totalScorable = currentQuiz.q.filter(q => !q.noScore).length;
             document.getElementById('res-score').innerText = `${scoreCount} / ${totalScorable}`;
         }
 
@@ -559,6 +607,10 @@
         .avatar-option.selected { border-color: #4f46e5; background: #eef2ff; transform: scale(1.1); }
         .animate-pop { animation: pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
         @keyframes pop { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .results-table { border-collapse: separate; border-spacing: 0; width: 100%; }
+        .results-table th { background: #f1f5f9; color: #64748b; font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; padding: 12px 8px; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
     </style>
 </head>
 <body class="min-h-screen p-4 md:p-8">
@@ -665,22 +717,64 @@
         </div>
 
         <!-- SCREEN: LIVE HOST -->
-        <div id="screen-live-host" class="hidden space-y-6 animate-pop">
-            <div class="bg-white p-6 rounded-3xl border shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
-                <div class="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-black text-3xl shadow-lg" id="host-pin">PIN: ----</div>
-                <div class="flex gap-2 w-full md:w-auto">
-                    <input type="text" id="host-quiz-code" placeholder="Постави код на урок..." class="flex-1 md:w-64 px-4 py-3 bg-slate-50 border rounded-xl font-bold">
-                    <button onclick="setupLiveHostQuiz()" class="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-bold shadow-lg">СТАРТ</button>
+        <div id="screen-live-host" class="hidden space-y-8 animate-pop">
+            <!-- Header Section -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="custom-card p-6 shadow-sm border-t-4 border-indigo-600 flex flex-col items-center justify-center space-y-2">
+                    <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Код за достъп</span>
+                    <div class="text-4xl font-black text-indigo-600" id="host-pin">----</div>
+                </div>
+                <div class="custom-card p-6 shadow-sm border-t-4 border-emerald-500 flex flex-col items-center justify-center space-y-2">
+                    <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Среден успех на класа</span>
+                    <div class="text-4xl font-black text-emerald-600" id="class-average">0%</div>
+                </div>
+                <div class="custom-card p-6 shadow-sm border-t-4 border-rose-500 flex flex-col items-center justify-center space-y-2">
+                    <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Зареждане на урок</span>
+                    <div class="flex gap-2 w-full">
+                        <input type="text" id="host-quiz-code" placeholder="Код..." class="flex-1 px-3 py-2 bg-slate-50 border rounded-xl font-bold text-xs outline-none">
+                        <button onclick="setupLiveHostQuiz()" class="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] uppercase">СТАРТ</button>
+                    </div>
                 </div>
             </div>
-            <div id="host-player-area" class="hidden space-y-6">
-                <div class="video-container"><div id="host-video"></div></div>
-                <div class="bg-white p-6 rounded-3xl border shadow-md flex justify-between items-center">
-                    <div class="text-4xl font-mono font-bold text-indigo-600" id="host-timer">00:00</div>
-                    <div id="host-participant-list" class="flex-1 flex gap-2 mx-4 overflow-x-auto p-2"></div>
-                    <div class="flex flex-col items-end gap-2">
-                        <div class="text-[10px] font-black text-slate-400 uppercase">Ученици: <span id="host-participant-count" class="text-slate-900">0</span></div>
-                        <button onclick="endLiveSession()" class="bg-rose-500 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase hover:bg-rose-600 shadow-md">КРАЙ НА УРОКА</button>
+
+            <!-- Main Area -->
+            <div id="host-player-area" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-8">
+                <!-- Video and Player Controls -->
+                <div class="lg:col-span-8 space-y-6">
+                    <div class="video-container"><div id="host-video"></div></div>
+                    <div class="bg-white p-6 rounded-3xl border shadow-md flex justify-between items-center">
+                        <div class="flex flex-col">
+                            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Време</span>
+                            <div class="text-3xl font-mono font-bold text-indigo-600" id="host-timer">00:00</div>
+                        </div>
+                        <div id="host-participant-list" class="flex-1 flex gap-2 mx-6 overflow-x-auto py-2 custom-scrollbar"></div>
+                        <button onclick="endLiveSession()" class="bg-rose-500 text-white px-6 py-3 rounded-2xl font-black text-xs uppercase hover:bg-rose-600 shadow-lg transition-transform hover:scale-105">КРАЙ</button>
+                    </div>
+                </div>
+
+                <!-- Live Results Dashboard -->
+                <div class="lg:col-span-4 space-y-6">
+                    <div class="custom-card shadow-sm h-full flex flex-col overflow-hidden">
+                        <div class="p-4 bg-slate-50 border-b flex items-center justify-between">
+                            <h3 class="font-black text-[10px] uppercase text-slate-500 tracking-widest">Резултати на живо</h3>
+                            <div class="bg-indigo-100 text-indigo-600 px-2 py-1 rounded text-[10px] font-black">
+                                УЧЕНИЦИ: <span id="host-participant-count">0</span>
+                            </div>
+                        </div>
+                        <div class="flex-1 overflow-y-auto custom-scrollbar">
+                            <table class="results-table">
+                                <thead>
+                                    <tr>
+                                        <th class="text-left">Ученик</th>
+                                        <th>Точки</th>
+                                        <th>Статус</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="host-results-body">
+                                    <!-- Dynamic rows -->
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -703,7 +797,6 @@
                 <h3 id="live-feedback-text" class="text-3xl font-black uppercase">...</h3>
                 <p class="text-slate-400 text-xs mt-4">Продължаваме след малко...</p>
             </div>
-            <!-- NEW: SUBMIT SCREEN FOR CLIENT -->
             <div id="client-submit" class="hidden space-y-6 animate-pop">
                 <div class="w-24 h-24 bg-indigo-600 rounded-full flex items-center justify-center mx-auto shadow-2xl text-white">
                     <i data-lucide="send" class="w-10 h-10"></i>
