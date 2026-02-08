@@ -16,7 +16,6 @@
         // Global configuration
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'ultimate-video-quiz-v12';
         
-        // Firebase Config with the NEW API Key
         const firebaseConfig = {
             apiKey: "AIzaSyA73graFUs8-qj5cT8nYbZJ4wAHIHBVlRI", 
             authDomain: "gen-lang-client-0744005778.firebaseapp.com",
@@ -51,7 +50,6 @@
             const errorMsg = document.getElementById('auth-error-msg');
 
             try {
-                // Try to use environment token if available, otherwise anonymous
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                     try {
                         await signInWithCustomToken(auth, __initial_auth_token);
@@ -65,9 +63,9 @@
             } catch (error) {
                 console.error("Auth Error:", error);
                 if (error.code === 'auth/operation-not-allowed' || error.message.includes('signup-are-blocked')) {
-                    errorMsg.innerText = "Грешка: Анонимният вход е деактивиран в Firebase конзолата. Функциите 'На живо' няма да работят, но можете да ползвате 'Индивидуален режим'.";
+                    errorMsg.innerText = "Грешка: Анонимният вход е деактивиран.";
                 } else {
-                    errorMsg.innerText = "Проблем със свързването към облака. Проверете дали новият API ключ е активен.";
+                    errorMsg.innerText = "Проблем със свързването към облака.";
                 }
                 warning.classList.remove('hidden');
                 loader.classList.add('hidden');
@@ -85,10 +83,7 @@
 
         initAuth();
         
-        // Failsafe for blue screen
-        setTimeout(() => {
-            document.getElementById('auth-loader').classList.add('hidden');
-        }, 5000);
+        setTimeout(() => document.getElementById('auth-loader').classList.add('hidden'), 5000);
 
         const ensureFirebase = (featureName) => {
             if (!firebaseReady || !user) {
@@ -164,44 +159,6 @@
                 }
             });
         }
-
-        window.openQModal = () => {
-            if (player) player.pauseVideo();
-            editQuestionIndex = -1;
-            document.getElementById('m-time').innerText = player ? formatTime(player.getCurrentTime()) : "00:00";
-            document.getElementById('m-type').value = 'single';
-            document.getElementById('m-text').value = '';
-            document.getElementById('m-time-limit').value = '';
-            renderQuestionEditorFields();
-            document.getElementById('modal-q').classList.remove('hidden');
-        };
-
-        window.renderQuestionEditorFields = () => {
-            const type = document.getElementById('m-type').value;
-            const container = document.getElementById('m-opts');
-            container.innerHTML = '';
-
-            if (type === 'truefalse' || type === 'yesno') {
-                const labels = type === 'yesno' ? ['Да', 'Не'] : ['Вярно', 'Грешно'];
-                container.innerHTML = labels.map((l, i) => `
-                    <label class="flex items-center gap-2 p-2 bg-slate-50 border rounded-xl cursor-pointer">
-                        <input type="radio" name="m-correct" value="${i}" ${i === 0 ? 'checked' : ''}>
-                        <span class="font-bold text-sm">${l}</span>
-                    </label>`).join('');
-            } else if (type === 'order') {
-                container.innerHTML = [0, 1, 2, 3].map(i => `<input type="text" id="m-order-${i}" placeholder="Елемент ${i+1}" class="w-full px-3 py-2 bg-slate-50 border rounded-xl mb-2 text-sm font-bold">`).join('');
-            } else if (type === 'short') {
-                container.innerHTML = `<input type="text" id="m-short-answers" placeholder="напр: ДНК, DNA" class="w-full px-3 py-2 bg-slate-50 border rounded-xl text-sm font-bold">`;
-            } else if (type === 'emoji') {
-                container.innerHTML = `<p class="text-[11px] text-slate-500 italic">Свободен отговор с емотикон.</p>`;
-            } else {
-                container.innerHTML = [0, 1, 2].map(i => `
-                    <div class="flex items-center gap-2 mb-2">
-                        <input type="${type === 'multi' ? 'checkbox' : 'radio'}" name="m-correct" value="${i}" ${i === 0 ? 'checked' : ''}>
-                        <input type="text" id="m-opt-${i}" placeholder="Опция ${i+1}" class="flex-1 px-3 py-2 bg-slate-50 border rounded-xl text-sm font-bold">
-                    </div>`).join('');
-            }
-        };
 
         window.saveQuestionToEditor = () => {
             const text = document.getElementById('m-text').value.trim();
@@ -326,6 +283,17 @@
             });
         }
 
+        window.endLiveSession = async () => {
+            if (!confirm("Сигурни ли сте, че искате да приключите урока за всички?")) return;
+            try {
+                const sessionRef = doc(db, 'artifacts', appId, 'public', 'data', 'sessions', sessionID);
+                await updateDoc(sessionRef, { status: 'finishing' });
+                alert("Урокът е приключен. Очаквайте отговорите на учениците.");
+            } catch (e) {
+                console.error(e);
+            }
+        };
+
         // --- SOLVE INDIVIDUAL ---
         window.startIndividual = () => {
             studentNameValue = document.getElementById('ind-student-name').value.trim();
@@ -440,13 +408,14 @@
             
             try {
                 const pRef = doc(db, 'artifacts', appId, 'public', 'data', 'participants', user.uid);
-                await setDoc(pRef, { name: studentNameValue, sessionId: pin, avatar: selectedEmoji, score: 0, total: 0 });
+                await setDoc(pRef, { name: studentNameValue, sessionId: pin, avatar: selectedEmoji, score: 0, total: 0, finished: false });
 
                 const sRef = doc(db, 'artifacts', appId, 'public', 'data', 'sessions', pin);
                 unsubscribeSession = onSnapshot(sRef, (snap) => {
                     const data = snap.data();
                     if (!data) return;
                     if (data.status === 'finished') toggleClient('finish');
+                    else if (data.status === 'finishing') toggleClient('submit');
                     else if (data.activeQ === -1) toggleClient('waiting');
                     else showLiveQ(data.qData, data.activeQ);
                 });
@@ -454,7 +423,7 @@
         };
 
         function toggleClient(view) {
-            ['waiting', 'question', 'feedback', 'finish'].forEach(v => {
+            ['waiting', 'question', 'feedback', 'submit', 'finish'].forEach(v => {
                 const el = document.getElementById('client-' + v);
                 if (el) el.classList.toggle('hidden', v !== view);
             });
@@ -491,6 +460,15 @@
             icon.className = `w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 text-white shadow-lg ${isCorrect ? 'bg-emerald-500' : 'bg-rose-500'}`;
             icon.innerHTML = `<i data-lucide="${isCorrect ? 'check' : 'x'}" class="w-10 h-10"></i>`;
             lucide.createIcons();
+        };
+
+        window.finishClientLive = async () => {
+            if (user) {
+                const pRef = doc(db, 'artifacts', appId, 'public', 'data', 'participants', user.uid);
+                await updateDoc(pRef, { finished: true });
+            }
+            switchScreen('finish');
+            document.getElementById('res-score').innerText = `${liveScore} / ${liveTotal}`;
         };
 
         // --- TIMER ---
@@ -541,6 +519,32 @@
             document.querySelectorAll('.avatar-option').forEach(o => o.classList.remove('selected'));
             el.classList.add('selected');
             selectedEmoji = em;
+        };
+
+        window.renderQuestionEditorFields = () => {
+            const type = document.getElementById('m-type').value;
+            const container = document.getElementById('m-opts');
+            container.innerHTML = '';
+            if (type === 'truefalse' || type === 'yesno') {
+                const labels = type === 'yesno' ? ['Да', 'Не'] : ['Вярно', 'Грешно'];
+                container.innerHTML = labels.map((l, i) => `
+                    <label class="flex items-center gap-2 p-2 bg-slate-50 border rounded-xl cursor-pointer">
+                        <input type="radio" name="m-correct" value="${i}" ${i === 0 ? 'checked' : ''}>
+                        <span class="font-bold text-sm">${l}</span>
+                    </label>`).join('');
+            } else if (type === 'order') {
+                container.innerHTML = [0, 1, 2, 3].map(i => `<input type="text" id="m-order-${i}" placeholder="Елемент ${i+1}" class="w-full px-3 py-2 bg-slate-50 border rounded-xl mb-2 text-sm font-bold">`).join('');
+            } else if (type === 'short') {
+                container.innerHTML = `<input type="text" id="m-short-answers" placeholder="напр: ДНК, DNA" class="w-full px-3 py-2 bg-slate-50 border rounded-xl text-sm font-bold">`;
+            } else if (type === 'emoji') {
+                container.innerHTML = `<p class="text-[11px] text-slate-500 italic">Свободен отговор с емотикон.</p>`;
+            } else {
+                container.innerHTML = [0, 1, 2].map(i => `
+                    <div class="flex items-center gap-2 mb-2">
+                        <input type="${type === 'multi' ? 'checkbox' : 'radio'}" name="m-correct" value="${i}" ${i === 0 ? 'checked' : ''}>
+                        <input type="text" id="m-opt-${i}" placeholder="Опция ${i+1}" class="flex-1 px-3 py-2 bg-slate-50 border rounded-xl text-sm font-bold">
+                    </div>`).join('');
+            }
         };
 
     </script>
@@ -674,7 +678,10 @@
                 <div class="bg-white p-6 rounded-3xl border shadow-md flex justify-between items-center">
                     <div class="text-4xl font-mono font-bold text-indigo-600" id="host-timer">00:00</div>
                     <div id="host-participant-list" class="flex-1 flex gap-2 mx-4 overflow-x-auto p-2"></div>
-                    <div class="text-[10px] font-black text-slate-400">УЧЕНИЦИ: <span id="host-participant-count" class="text-slate-900">0</span></div>
+                    <div class="flex flex-col items-end gap-2">
+                        <div class="text-[10px] font-black text-slate-400 uppercase">Ученици: <span id="host-participant-count" class="text-slate-900">0</span></div>
+                        <button onclick="endLiveSession()" class="bg-rose-500 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase hover:bg-rose-600 shadow-md">КРАЙ НА УРОКА</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -694,14 +701,25 @@
             <div id="client-feedback" class="hidden animate-pop">
                 <div id="live-feedback-icon" class="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4"></div>
                 <h3 id="live-feedback-text" class="text-3xl font-black uppercase">...</h3>
+                <p class="text-slate-400 text-xs mt-4">Продължаваме след малко...</p>
+            </div>
+            <!-- NEW: SUBMIT SCREEN FOR CLIENT -->
+            <div id="client-submit" class="hidden space-y-6 animate-pop">
+                <div class="w-24 h-24 bg-indigo-600 rounded-full flex items-center justify-center mx-auto shadow-2xl text-white">
+                    <i data-lucide="send" class="w-10 h-10"></i>
+                </div>
+                <h2 class="text-2xl font-black">Урокът приключи!</h2>
+                <p class="text-slate-500 max-w-xs mx-auto">Учителят прекрати урока. Натисни бутона, за да предадеш отговорите си и да видиш резултата.</p>
+                <button onclick="finishClientLive()" class="px-12 py-5 bg-indigo-600 text-white rounded-[2rem] font-black shadow-xl uppercase tracking-widest hover:scale-105 transition-transform">ПРЕДАЙ ОТГОВОРИ</button>
             </div>
         </div>
 
         <!-- SCREEN: FINISH -->
         <div id="screen-finish" class="hidden py-20 text-center space-y-8 animate-pop">
             <div class="bg-yellow-400 w-24 h-24 rounded-full flex items-center justify-center mx-auto shadow-2xl text-white"><i data-lucide="trophy" class="w-12 h-12"></i></div>
-            <h2 class="text-4xl font-black uppercase">Урокът приключи!</h2>
+            <h2 class="text-4xl font-black uppercase">ТВОЯТ РЕЗУЛТАТ</h2>
             <div class="text-7xl font-black text-indigo-600" id="res-score">...</div>
+            <p class="text-slate-400 font-bold">Браво за усилията!</p>
             <button onclick="location.reload()" class="px-12 py-4 bg-slate-900 text-white rounded-3xl font-bold shadow-xl uppercase text-xs tracking-widest">Към началото</button>
         </div>
 
@@ -734,9 +752,8 @@
     <div id="modal-export" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden items-center justify-center p-4 z-[100]">
         <div class="bg-white w-full max-w-md rounded-[3rem] p-10 text-center animate-pop">
             <h2 class="text-xl font-bold mb-4">Урокът е генериран!</h2>
-            <p class="text-[10px] text-slate-400 mb-4 uppercase font-black">Копирайте и изпратете този код:</p>
-            <textarea id="export-textarea" readonly class="w-full h-32 p-4 bg-slate-50 border rounded-2xl text-[10px] font-mono mb-6 focus:ring-0 outline-none"></textarea>
-            <button onclick="document.getElementById('modal-export').classList.add('hidden')" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold uppercase text-xs tracking-widest shadow-lg">ЗАТВОРИ</button>
+            <textarea id="export-textarea" readonly class="w-full h-32 p-4 bg-slate-50 border rounded-2xl text-[10px] font-mono mb-6 outline-none"></textarea>
+            <button onclick="document.getElementById('modal-export').classList.add('hidden')" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold uppercase text-xs shadow-lg">ЗАТВОРИ</button>
         </div>
     </div>
 
