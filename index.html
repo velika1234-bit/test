@@ -10,7 +10,7 @@
     <!-- Modern Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, collection, doc, setDoc, getDoc, updateDoc, onSnapshot, serverTimestamp, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, doc, setDoc, getDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, query, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'ultimate-video-quiz-v12';
@@ -183,17 +183,42 @@
                 if (unsubscribeIndividual) { unsubscribeIndividual(); unsubscribeIndividual = null; }
             }
         };
+
+        // ФУНКЦИИ ЗА ИЗТРИВАНЕ
+        window.deleteIndividualResult = async (resId) => {
+            if (!confirm("Наистина ли искате да изтриете този резултат?")) return;
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'individual_results', resId);
+                await deleteDoc(docRef);
+            } catch (e) { console.error("Error deleting:", e); }
+        };
+
+        window.clearAllIndividualResults = async () => {
+            if (!confirm("ВНИМАНИЕ: Това ще изтрие абсолютно всички индивидуални резултати завинаги! Сигурни ли сте?")) return;
+            try {
+                const qRef = collection(db, 'artifacts', appId, 'public', 'data', 'individual_results');
+                const snap = await getDocs(qRef);
+                const promises = snap.docs.map(d => deleteDoc(d.ref));
+                await Promise.all(promises);
+            } catch (e) { console.error("Error clearing results:", e); }
+        };
+
         function listenIndividualResults() {
             const qRef = collection(db, 'artifacts', appId, 'public', 'data', 'individual_results');
             unsubscribeIndividual = onSnapshot(qRef, (snap) => {
                 const list = snap.docs.map(d => ({...d.data(), id: d.id})).sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
                 window.indParticipantsData = list; 
                 document.getElementById('host-ind-results-body').innerHTML = list.map((r, i) => `
-                    <tr class="border-b border-slate-50 text-[11px] hover:bg-slate-50/50">
+                    <tr class="border-b border-slate-50 text-[11px] hover:bg-slate-50/50 group">
                         <td class="py-4 px-4 font-bold text-slate-700">${r.studentName}</td>
                         <td class="py-4 text-center text-indigo-600 font-black">${r.score} / ${r.total}</td>
                         <td class="py-4 text-center font-medium text-slate-500">${formatDateTime(r.timestamp)}</td>
-                        <td class="py-4 text-center"><button onclick="showReport('${r.id}', 'ind')" class="p-2 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-600 hover:text-white transition-all"><i data-lucide="eye" class="w-3.5 h-3.5"></i></button></td>
+                        <td class="py-4 text-center">
+                            <div class="flex items-center justify-center gap-2">
+                                <button onclick="showReport('${r.id}', 'ind')" class="p-2 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-600 hover:text-white transition-all shadow-sm"><i data-lucide="eye" class="w-3.5 h-3.5"></i></button>
+                                <button onclick="deleteIndividualResult('${r.id}')" class="p-2 bg-rose-50 text-rose-400 rounded-xl hover:bg-rose-500 hover:text-white transition-all shadow-sm opacity-0 group-hover:opacity-100"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                            </div>
+                        </td>
                         <td class="py-4 px-4 text-right opacity-50 font-mono text-[9px]">${r.quizHash}</td>
                     </tr>`).join('') || '<tr><td colspan="5" class="text-center py-10 text-slate-400 italic">Все още няма индивидуални опити.</td></tr>';
                 lucide.createIcons();
@@ -402,10 +427,9 @@
             background: linear-gradient(135deg, #4338ca 0%, #3730a3 100%);
             box-shadow: 0 20px 25px -5px rgba(79, 70, 229, 0.4);
         }
-        /* Стил за "изплуващи" икони */
         .foreground-icon {
             position: absolute;
-            top: -2.5rem; /* Изместване нагоре */
+            top: -2.5rem; 
             left: 2.5rem;
             z-index: 20;
             transition: transform 0.3s ease, box-shadow 0.3s ease;
@@ -568,7 +592,10 @@
                 <div class="flex items-center justify-between mb-10">
                     <div class="flex items-center gap-4">
                         <div class="bg-indigo-600 p-4 rounded-3xl text-white shadow-xl shadow-indigo-100"><i data-lucide="history" class="w-8 h-8"></i></div>
-                        <h2 class="text-2xl font-black text-slate-800 tracking-tight uppercase">Индивидуални сесии</h2>
+                        <div class="flex flex-col">
+                            <h2 class="text-2xl font-black text-slate-800 tracking-tight uppercase">Индивидуални сесии</h2>
+                            <button onclick="clearAllIndividualResults()" class="text-[9px] font-black text-rose-500 uppercase tracking-widest hover:text-rose-600 transition-all text-left">Изчисти цялата история</button>
+                        </div>
                     </div>
                     <button onclick="toggleIndHistory()" class="p-4 bg-slate-50 hover:bg-slate-100 rounded-full transition-all text-slate-400"><i data-lucide="x" class="w-6 h-6"></i></button>
                 </div>
@@ -579,7 +606,7 @@
                                 <th class="pb-5 px-4">Ученик</th>
                                 <th class="pb-5 text-center">Точки</th>
                                 <th class="pb-5 text-center">Дата и час</th>
-                                <th class="pb-5 text-center">Преглед</th>
+                                <th class="pb-5 text-center">Действие</th>
                                 <th class="pb-5 text-right pr-4">Хеш</th>
                             </tr>
                         </thead>
