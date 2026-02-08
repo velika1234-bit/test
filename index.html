@@ -13,9 +13,7 @@
         import { getFirestore, collection, doc, setDoc, getDoc, updateDoc, onSnapshot, serverTimestamp, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
-        // Global configuration
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'ultimate-video-quiz-v12';
-        
         const firebaseConfig = {
             apiKey: "AIzaSyA73graFUs8-qj5cT8nYbZJ4wAHIHBVlRI", 
             authDomain: "gen-lang-client-0744005778.firebaseapp.com",
@@ -35,7 +33,7 @@
         let questions = [], currentQuiz = null, quizHash = "";
         let currentQIndex = -1, scoreCount = 0, studentNameValue = "", selectedEmoji = "🐱";
         let sessionID = "", liveActiveQIdx = -1;
-        let unsubscribeParticipants = null, unsubscribeIndividual = null;
+        let unsubscribeParticipants = null, unsubscribeIndividual = null, unsubscribeSession = null;
         let liveScore = 0, liveTotal = 0;
         let indOrderState = [];
         let indTimerInterval = null, liveTimerInterval = null;
@@ -43,7 +41,7 @@
         let editQuestionIndex = -1;
         const EMOJI_OPTIONS = ['😀', '😐', '😢', '😡', '😍'];
 
-        // --- AUTH INITIALIZATION ---
+        // --- AUTH ---
         const initAuth = async () => {
             const loader = document.getElementById('auth-loader');
             try {
@@ -60,61 +58,30 @@
                 loader.classList.add('hidden');
             }
         };
-
-        onAuthStateChanged(auth, (u) => {
-            user = u;
-            if (user) {
-                firebaseReady = true;
-                document.getElementById('auth-loader').classList.add('hidden');
-            }
-        });
-
+        onAuthStateChanged(auth, (u) => { user = u; if (user) { firebaseReady = true; document.getElementById('auth-loader').classList.add('hidden'); } });
         initAuth();
-        
-        const ensureFirebase = (featureName) => {
-            if (!firebaseReady || !user) {
-                alert(`Функцията '${featureName}' изисква активна облачна връзка.`);
-                return false;
-            }
-            return true;
-        };
+
+        const ensureFirebase = (featureName) => { if (!firebaseReady || !user) { alert(`Функцията '${featureName}' изисква активна облачна връзка.`); return false; } return true; };
 
         // --- YOUTUBE API ---
-        const loadYT = () => {
-            if (!window.YT) {
-                const tag = document.createElement('script');
-                tag.src = "https://www.youtube.com/iframe_api";
-                document.head.appendChild(tag);
-            }
-        };
+        const loadYT = () => { if (!window.YT) { const tag = document.createElement('script'); tag.src = "https://www.youtube.com/iframe_api"; document.head.appendChild(tag); } };
         loadYT();
 
         // --- UTILS ---
-        const formatTime = (s) => { 
-            const m = Math.floor(s / 60), r = Math.floor(s % 60); 
-            return `${m < 10 ? '0' + m : m}:${r < 10 ? '0' + r : r}`; 
-        };
-        const extractID = (u) => {
-            const regex = /^.*(?:(?:youtu\.be\/|v\/|vi\/|u\/\w\/|embed\/|shorts\/)|(?:(?:watch)?\?v(?:i)?=|\&v(?:i)?=))([^#\&\?]*).*/;
-            const m = u.match(regex);
-            return (m && m[1].length === 11) ? m[1] : null;
-        };
+        const formatTime = (s) => { const m = Math.floor(s / 60), r = Math.floor(s % 60); return `${m < 10 ? '0' + m : m}:${r < 10 ? '0' + r : r}`; };
+        const extractID = (u) => { const regex = /^.*(?:(?:youtu\.be\/|v\/|vi\/|u\/\w\/|embed\/|shorts\/)|(?:(?:watch)?\?v(?:i)?=|\&v(?:i)?=))([^#\&\?]*).*/; const m = u.match(regex); return (m && m[1].length === 11) ? m[1] : null; };
         const shuffleArray = (arr) => arr.map(v => ({ v, s: Math.random() })).sort((a, b) => a.s - b.s).map(v => v.v);
 
         window.switchScreen = (name) => {
             document.querySelectorAll('#app > div').forEach(div => div.classList.add('hidden'));
             const target = document.getElementById('screen-' + name);
             if (target) target.classList.remove('hidden');
-            
             if (player) try { player.destroy(); player = null; } catch(e) {}
             if (solvePlayer) try { solvePlayer.destroy(); solvePlayer = null; } catch(e) {}
             if (hostPlayer) try { hostPlayer.destroy(); hostPlayer = null; } catch(e) {}
-            
             if (unsubscribeParticipants) { unsubscribeParticipants(); unsubscribeParticipants = null; }
-            if (unsubscribeIndividual) { unsubscribeIndividual(); unsubscribeIndividual = null; }
-            
-            clearQuestionTimers('ind');
-            clearQuestionTimers('live');
+            if (unsubscribeSession) { unsubscribeSession(); unsubscribeSession = null; }
+            clearQuestionTimers('ind'); clearQuestionTimers('live');
             if (window.lucide) lucide.createIcons();
         };
 
@@ -124,97 +91,41 @@
             const id = extractID(url);
             if (!id) return alert("Невалиден YouTube линк.");
             document.getElementById('editor-view').classList.remove('hidden');
-            initEditorPlayer(id);
-            questions = [];
-            renderEditorQuestions();
+            initEditorPlayer(id); questions = []; renderEditorQuestions();
         };
-
         function initEditorPlayer(id) {
             if (!window.YT || !window.YT.Player) return setTimeout(() => initEditorPlayer(id), 500);
-            player = new YT.Player('player', {
-                videoId: id,
-                playerVars: { 'enablejsapi': 1, 'origin': window.location.origin },
-                events: {
-                    'onReady': () => {
-                        setInterval(() => {
-                            if (player && player.getCurrentTime) {
-                                document.getElementById('timer').innerText = formatTime(player.getCurrentTime());
-                            }
-                        }, 500);
-                    }
-                }
-            });
+            player = new YT.Player('player', { videoId: id, playerVars: { 'enablejsapi': 1, 'origin': window.location.origin }, events: { 'onReady': () => { setInterval(() => { if (player && player.getCurrentTime) document.getElementById('timer').innerText = formatTime(player.getCurrentTime()); }, 500); } } });
         }
-
         window.saveQuestionToEditor = () => {
             const text = document.getElementById('m-text').value.trim();
             const type = document.getElementById('m-type').value;
             if (!text) return alert("Въведи текст!");
             const time = editQuestionIndex >= 0 ? questions[editQuestionIndex].time : Math.floor(player.getCurrentTime());
             let q = { time, text, type, timeLimit: parseInt(document.getElementById('m-time-limit').value) || 0 };
-
-            if (type === 'short') {
-                q.correctText = document.getElementById('m-short-answers').value.split(',').map(v => v.trim()).filter(Boolean);
-            } else if (type === 'order') {
-                q.options = [0, 1, 2, 3].map(i => document.getElementById('m-order-' + i).value.trim()).filter(Boolean);
-                q.order = [...q.options];
-            } else if (type === 'emoji') {
-                q.options = EMOJI_OPTIONS; q.noScore = true;
-            } else {
-                q.options = [0, 1, 2].map(i => document.getElementById('m-opt-' + i).value.trim()).filter(Boolean);
-                if (type === 'multi') q.correct = Array.from(document.querySelectorAll('input[name="m-correct"]:checked')).map(el => parseInt(el.value));
-                else q.correct = parseInt(document.querySelector('input[name="m-correct"]:checked')?.value || 0);
-            }
-
+            if (type === 'short') q.correctText = document.getElementById('m-short-answers').value.split(',').map(v => v.trim()).filter(Boolean);
+            else if (type === 'order') { q.options = [0, 1, 2, 3].map(i => document.getElementById('m-order-' + i).value.trim()).filter(Boolean); q.order = [...q.options]; }
+            else if (type === 'emoji') { q.options = EMOJI_OPTIONS; q.noScore = true; }
+            else { q.options = [0, 1, 2].map(i => document.getElementById('m-opt-' + i).value.trim()).filter(Boolean); if (type === 'multi') q.correct = Array.from(document.querySelectorAll('input[name="m-correct"]:checked')).map(el => parseInt(el.value)); else q.correct = parseInt(document.querySelector('input[name="m-correct"]:checked')?.value || 0); }
             if (editQuestionIndex >= 0) questions[editQuestionIndex] = q; else questions.push(q);
-            questions.sort((a, b) => a.time - b.time);
-            renderEditorQuestions();
-            document.getElementById('modal-q').classList.add('hidden');
+            questions.sort((a, b) => a.time - b.time); renderEditorQuestions(); document.getElementById('modal-q').classList.add('hidden');
         };
-
         window.renderEditorQuestions = () => {
             const list = document.getElementById('q-list');
-            list.innerHTML = questions.map((q, i) => `
-                <div class="p-3 bg-slate-50 border rounded-2xl flex items-center justify-between mb-2">
-                    <span class="font-mono text-indigo-600 font-bold">${formatTime(q.time)}</span>
-                    <span class="text-sm font-bold truncate mx-2 flex-1 text-left">${q.text}</span>
-                    <button onclick="editQ(${i})" class="p-2 text-indigo-500"><i data-lucide="pencil" class="w-4 h-4"></i></button>
-                </div>`).join('');
+            list.innerHTML = questions.map((q, i) => `<div class="p-3 bg-slate-50 border rounded-2xl flex items-center justify-between mb-2"><span class="font-mono text-indigo-600 font-bold">${formatTime(q.time)}</span><span class="text-sm font-bold truncate mx-2 flex-1 text-left">${q.text}</span><button onclick="editQ(${i})" class="p-2 text-indigo-500"><i data-lucide="pencil" class="w-4 h-4"></i></button></div>`).join('');
             lucide.createIcons();
         };
-
-        window.editQ = (i) => { 
-            editQuestionIndex = i;
-            const q = questions[i];
-            document.getElementById('m-text').value = q.text;
-            document.getElementById('m-type').value = q.type;
-            document.getElementById('m-time-limit').value = q.timeLimit || '';
-            renderQuestionEditorFields();
-            document.getElementById('modal-q').classList.remove('hidden');
-        };
-
-        window.exportQuiz = () => {
-            if (!player) return alert("Заредете видео първо!");
-            const code = btoa(unescape(encodeURIComponent(JSON.stringify({ v: player.getVideoData().video_id, q: questions }))));
-            document.getElementById('export-textarea').value = code;
-            document.getElementById('modal-export').classList.remove('hidden');
-        };
+        window.editQ = (i) => { editQuestionIndex = i; const q = questions[i]; document.getElementById('m-text').value = q.text; document.getElementById('m-type').value = q.type; document.getElementById('m-time-limit').value = q.timeLimit || ''; renderQuestionEditorFields(); document.getElementById('modal-q').classList.remove('hidden'); };
+        window.exportQuiz = () => { if (!player) return alert("Заредете видео първо!"); const code = btoa(unescape(encodeURIComponent(JSON.stringify({ v: player.getVideoData().video_id, q: questions })))); document.getElementById('export-textarea').value = code; document.getElementById('modal-export').classList.remove('hidden'); };
 
         // --- LIVE HOST ---
         window.openLiveHost = async () => {
             if (!ensureFirebase('На живо (Host)')) return;
             sessionID = Math.floor(1000 + Math.random() * 9000).toString();
-            switchScreen('live-host');
-            document.getElementById('host-pin').innerText = sessionID;
-            
-            try {
-                const sessionRef = doc(db, 'artifacts', appId, 'public', 'data', 'sessions', sessionID);
-                await setDoc(sessionRef, { activeQ: -1, status: 'waiting', createdAt: serverTimestamp() });
-                listenParticipants();
-                listenIndividualResults();
-            } catch (e) { alert("Проблем със сесията."); }
+            switchScreen('live-host'); document.getElementById('host-pin').innerText = sessionID;
+            try { const sessionRef = doc(db, 'artifacts', appId, 'public', 'data', 'sessions', sessionID); await setDoc(sessionRef, { activeQ: -1, status: 'waiting', createdAt: serverTimestamp() }); listenParticipants(); } 
+            catch (e) { alert("Проблем със сесията."); }
         };
-
         function listenParticipants() {
             if (!user) return;
             const qRef = collection(db, 'artifacts', appId, 'public', 'data', 'participants');
@@ -224,499 +135,356 @@
                 renderResultsTable(participants);
             });
         }
-
+        window.toggleIndHistory = () => {
+            const modal = document.getElementById('modal-ind-history');
+            const isOpen = !modal.classList.contains('hidden');
+            if(!isOpen) {
+                modal.classList.remove('hidden'); modal.classList.add('flex');
+                listenIndividualResults();
+            } else {
+                modal.classList.add('hidden'); modal.classList.remove('flex');
+                if (unsubscribeIndividual) { unsubscribeIndividual(); unsubscribeIndividual = null; }
+            }
+        };
         function listenIndividualResults() {
             const qRef = collection(db, 'artifacts', appId, 'public', 'data', 'individual_results');
             unsubscribeIndividual = onSnapshot(qRef, (snap) => {
                 const list = snap.docs.map(d => d.data()).sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
-                document.getElementById('host-ind-results-body').innerHTML = list.map(r => `
-                    <tr class="border-b text-[10px]">
-                        <td class="py-2 font-bold">${r.studentName}</td>
-                        <td class="py-2 text-center text-indigo-600 font-black">${r.score} / ${r.total}</td>
-                        <td class="py-2 text-right opacity-50">${r.quizHash}</td>
-                    </tr>
-                `).join('') || '<tr><td colspan="3" class="text-center py-4 text-slate-400 italic">Няма данни</td></tr>';
+                document.getElementById('host-ind-results-body').innerHTML = list.map(r => `<tr class="border-b text-[11px]"><td class="py-3 font-bold">${r.studentName}</td><td class="py-3 text-center text-indigo-600 font-black">${r.score} / ${r.total}</td><td class="py-3 text-right opacity-50 font-mono">${r.quizHash}</td></tr>`).join('') || '<tr><td colspan="3" class="text-center py-8 text-slate-400 italic">Все още няма индивидуални опити.</td></tr>';
             });
         }
-
         function renderResultsTable(participants) {
             const container = document.getElementById('host-results-body');
-            if(!container) return;
             const sorted = [...participants].sort((a, b) => b.score - a.score);
-            container.innerHTML = sorted.map(p => `
-                <tr class="border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                    <td class="py-3 px-2 flex items-center gap-2">
-                        <span class="text-lg">${p.avatar}</span>
-                        <span class="font-bold text-slate-700">${p.name}</span>
-                    </td>
-                    <td class="py-3 px-2 text-center">
-                        <span class="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full font-black text-xs">${p.score} / ${p.total || 0}</span>
-                    </td>
-                    <td class="py-3 px-2 text-center">
-                        ${p.finished ? '<span class="text-emerald-500 font-bold text-[10px] uppercase">Завършил</span>' : '<span class="text-amber-500 font-bold text-[10px] uppercase animate-pulse">Играе...</span>'}
-                    </td>
-                </tr>
-            `).join('') || '<tr><td colspan="3" class="text-center py-4 text-slate-400 italic text-xs">Няма свързани ученици</td></tr>';
-
-            const totalScore = participants.reduce((acc, p) => acc + p.score, 0);
-            const totalPossible = participants.reduce((acc, p) => acc + (p.total || 0), 0);
+            container.innerHTML = sorted.map(p => `<tr class="border-b border-slate-50 hover:bg-slate-50 transition-colors"><td class="py-3 px-4 flex items-center gap-2"><span class="text-lg">${p.avatar}</span><span class="font-bold text-slate-700">${p.name}</span></td><td class="py-3 px-4 text-center"><span class="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full font-black text-xs">${p.score} / ${p.total || 0}</span></td><td class="py-3 px-4 text-center">${p.finished ? '<span class="text-emerald-500 font-bold text-[10px] uppercase tracking-tighter">Завършил</span>' : '<span class="text-amber-500 font-bold text-[10px] uppercase animate-pulse">Играе...</span>'}</td></tr>`).join('') || '<tr><td colspan="3" class="text-center py-6 text-slate-400 italic text-xs">Няма свързани ученици</td></tr>';
+            const totalScore = participants.reduce((acc, p) => acc + p.score, 0), totalPossible = participants.reduce((acc, p) => acc + (p.total || 0), 0);
             document.getElementById('class-average').innerText = totalPossible > 0 ? `${Math.round((totalScore / totalPossible) * 100)}%` : '0%';
         }
-
         window.setupLiveHostQuiz = async () => {
-            const code = document.getElementById('host-quiz-code').value.trim();
-            if (!code || !user) return;
-            try {
-                currentQuiz = JSON.parse(decodeURIComponent(escape(atob(code))));
-                const sessionRef = doc(db, 'artifacts', appId, 'public', 'data', 'sessions', sessionID);
-                await updateDoc(sessionRef, { hash: code.substring(0, 10), status: 'active' });
-                document.getElementById('host-player-area').classList.remove('hidden');
-                initHostPlayer();
-            } catch (e) { alert("Грешен код на урока!"); }
+            const code = document.getElementById('host-quiz-code').value.trim(); if (!code || !user) return;
+            try { currentQuiz = JSON.parse(decodeURIComponent(escape(atob(code)))); const sessionRef = doc(db, 'artifacts', appId, 'public', 'data', 'sessions', sessionID); await updateDoc(sessionRef, { hash: code.substring(0, 10), status: 'active' }); document.getElementById('host-player-area').classList.remove('hidden'); initHostPlayer(); } catch (e) { alert("Грешен код!"); }
         };
-
         function initHostPlayer() {
             if (!window.YT || !window.YT.Player) return setTimeout(initHostPlayer, 500);
-            hostPlayer = new YT.Player('host-video', {
-                videoId: currentQuiz.v,
-                playerVars: { 'controls': 1, 'origin': window.location.origin },
-                events: {
-                    'onStateChange': (e) => {
-                        if (e.data === YT.PlayerState.PLAYING) {
-                            const mon = setInterval(async () => {
-                                if (!hostPlayer || !hostPlayer.getCurrentTime) return clearInterval(mon);
-                                const cur = Math.floor(hostPlayer.getCurrentTime());
-                                document.getElementById('host-timer').innerText = formatTime(cur);
-                                const qIdx = currentQuiz.q.findIndex(q => q.time === cur);
-                                if (qIdx !== -1 && qIdx !== liveActiveQIdx) {
-                                    liveActiveQIdx = qIdx;
-                                    hostPlayer.pauseVideo();
-                                    const sessionRef = doc(db, 'artifacts', appId, 'public', 'data', 'sessions', sessionID);
-                                    await updateDoc(sessionRef, { activeQ: qIdx, qData: currentQuiz.q[qIdx] });
-                                }
-                            }, 500);
-                        }
-                    }
-                }
-            });
+            hostPlayer = new YT.Player('host-video', { videoId: currentQuiz.v, playerVars: { 'controls': 1, 'origin': window.location.origin }, events: { 'onStateChange': (e) => { if (e.data === YT.PlayerState.PLAYING) { const mon = setInterval(async () => { if (!hostPlayer || !hostPlayer.getCurrentTime) return clearInterval(mon); const cur = Math.floor(hostPlayer.getCurrentTime()); document.getElementById('host-timer').innerText = formatTime(cur); const qIdx = currentQuiz.q.findIndex(q => q.time === cur); if (qIdx !== -1 && qIdx !== liveActiveQIdx) { liveActiveQIdx = qIdx; hostPlayer.pauseVideo(); const sessionRef = doc(db, 'artifacts', appId, 'public', 'data', 'sessions', sessionID); await updateDoc(sessionRef, { activeQ: qIdx, qData: currentQuiz.q[qIdx] }); } }, 500); } } } });
         }
+        window.endLiveSession = async () => { if (!confirm("Край на урока за всички?")) return; const sessionRef = doc(db, 'artifacts', appId, 'public', 'data', 'sessions', sessionID); await updateDoc(sessionRef, { status: 'finishing' }); };
 
-        window.endLiveSession = async () => {
-            if (!confirm("Край на урока за всички?")) return;
-            const sessionRef = doc(db, 'artifacts', appId, 'public', 'data', 'sessions', sessionID);
-            await updateDoc(sessionRef, { status: 'finishing' });
-        };
-
-        // --- SOLVE INDIVIDUAL ---
-        window.startIndividual = () => {
-            studentNameValue = document.getElementById('ind-student-name').value.trim();
-            const code = document.getElementById('ind-quiz-code').value.trim();
-            if (!studentNameValue || !code) return alert("Попълнете име и код!");
-            try {
-                currentQuiz = JSON.parse(decodeURIComponent(escape(atob(code))));
-                quizHash = code.substring(0, 8);
-                switchScreen('solve');
-                scoreCount = 0; currentQIndex = -1;
-                initSolvePlayer();
-            } catch (e) { alert("Грешен код!"); }
-        };
-
+        // --- INDIVIDUAL SOLVE ---
+        window.startIndividual = () => { studentNameValue = document.getElementById('ind-student-name').value.trim(); const code = document.getElementById('ind-quiz-code').value.trim(); if (!studentNameValue || !code) return alert("Попълнете име и код!"); try { currentQuiz = JSON.parse(decodeURIComponent(escape(atob(code)))); quizHash = code.substring(0, 8); switchScreen('solve'); scoreCount = 0; currentQIndex = -1; initSolvePlayer(); } catch(e) { alert("Грешен код!"); } };
         function initSolvePlayer() {
             if (!window.YT || !window.YT.Player) return setTimeout(initSolvePlayer, 500);
-            solvePlayer = new YT.Player('solve-player', {
-                videoId: currentQuiz.v,
-                playerVars: { 'autoplay': 1, 'controls': 1, 'origin': window.location.origin },
-                events: {
-                    'onStateChange': (e) => {
-                        if (e.data === YT.PlayerState.PLAYING) {
-                            const monitor = setInterval(() => {
-                                if (!solvePlayer || !solvePlayer.getCurrentTime) return clearInterval(monitor);
-                                const cur = Math.floor(solvePlayer.getCurrentTime());
-                                const qIdx = currentQuiz.q.findIndex((q, i) => q.time === cur && i > currentQIndex);
-                                if (qIdx !== -1) { 
-                                    currentQIndex = qIdx; 
-                                    triggerIndQuestion(currentQuiz.q[qIdx]); 
-                                }
-                                if (solvePlayer.getCurrentTime() >= solvePlayer.getDuration() - 1) {
-                                    clearInterval(monitor); finishIndQuiz();
-                                }
-                            }, 500);
-                        }
-                    }
-                }
-            });
+            solvePlayer = new YT.Player('solve-player', { videoId: currentQuiz.v, playerVars: { 'autoplay': 1, 'controls': 1, 'origin': window.location.origin }, events: { 'onStateChange': (e) => { if (e.data === YT.PlayerState.PLAYING) { const monitor = setInterval(() => { if (!solvePlayer || !solvePlayer.getCurrentTime) return clearInterval(monitor); const cur = Math.floor(solvePlayer.getCurrentTime()); const qIdx = currentQuiz.q.findIndex((q, i) => q.time === cur && i > currentQIndex); if (qIdx !== -1) { currentQIndex = qIdx; triggerIndQuestion(currentQuiz.q[qIdx]); } if (solvePlayer.getCurrentTime() >= solvePlayer.getDuration() - 1) { clearInterval(monitor); finishIndQuiz(); } }, 500); } } } });
         }
-
-        function triggerIndQuestion(q) {
-            solvePlayer.pauseVideo();
-            indQuestionLocked = false;
-            document.getElementById('ind-side-q-text').innerText = q.text;
-            const container = document.getElementById('ind-side-options');
-            container.innerHTML = '';
-            
-            document.getElementById('ind-side-panel').classList.remove('translate-x-full');
-            startTimer(q.timeLimit, 'ind');
-
-            if (q.type === 'short') {
-                container.innerHTML = `<input type="text" id="ind-short" placeholder="Твоят отговор..." class="w-full p-3 bg-slate-50 border rounded-xl mb-4 font-bold outline-none"><button onclick="submitIndShort()" class="w-full p-4 bg-indigo-600 text-white rounded-xl font-bold uppercase text-xs">Изпрати</button>`;
-            } else if (q.type === 'order') {
-                indOrderState = shuffleArray([...q.options]);
-                container.innerHTML = `<div id="ind-order-box" class="space-y-2 mb-4 text-xs"></div><button onclick="submitIndOrder()" class="w-full p-4 bg-indigo-600 text-white rounded-xl font-bold uppercase text-xs">Готово</button>`;
-                renderOrderList('ind-order-box', indOrderState);
-            } else {
-                container.innerHTML = q.options.map((o, i) => `<button onclick="submitInd(${i})" class="w-full p-3 text-left bg-slate-50 border-2 rounded-xl mb-2 font-bold hover:border-indigo-500 text-sm transition-all">${o}</button>`).join('');
-            }
-        }
-
+        function triggerIndQuestion(q) { solvePlayer.pauseVideo(); indQuestionLocked = false; document.getElementById('ind-side-q-text').innerText = q.text; const container = document.getElementById('ind-side-options'); container.innerHTML = ''; document.getElementById('ind-side-panel').classList.remove('translate-x-full'); startTimer(q.timeLimit, 'ind'); if (q.type === 'short') container.innerHTML = `<input type="text" id="ind-short" placeholder="Твоят отговор..." class="w-full p-3 bg-slate-50 border rounded-xl mb-4 font-bold outline-none"><button onclick="submitIndShort()" class="w-full p-4 bg-indigo-600 text-white rounded-xl font-bold uppercase text-xs">Изпрати</button>`; else if (q.type === 'order') { indOrderState = shuffleArray([...q.options]); container.innerHTML = `<div id="ind-order-box" class="space-y-2 mb-4 text-xs"></div><button onclick="submitIndOrder()" class="w-full p-4 bg-indigo-600 text-white rounded-xl font-bold uppercase text-xs">Готово</button>`; renderOrderList('ind-order-box', indOrderState); } else container.innerHTML = q.options.map((o, i) => `<button onclick="submitInd(${i})" class="w-full p-3 text-left bg-slate-50 border-2 rounded-xl mb-2 font-bold hover:border-indigo-500 text-sm transition-all">${o}</button>`).join(''); }
         window.submitInd = (idx) => { if (!indQuestionLocked) completeIndAnswer(currentQuiz.q[currentQIndex].correct === idx); };
         window.submitIndShort = () => { if (!indQuestionLocked) completeIndAnswer(currentQuiz.q[currentQIndex].correctText.some(t => t.toLowerCase() === document.getElementById('ind-short').value.trim().toLowerCase())); };
         window.submitIndOrder = () => { if (!indQuestionLocked) completeIndAnswer(currentQuiz.q[currentQIndex].order.every((v, i) => v === indOrderState[i])); };
+        function completeIndAnswer(isCorrect) { indQuestionLocked = true; clearQuestionTimers('ind'); if (isCorrect) scoreCount++; document.getElementById('ind-side-panel').classList.add('translate-x-full'); document.getElementById('solve-progress').innerText = `${currentQIndex + 1} / ${currentQuiz.q.length}`; setTimeout(() => { if (solvePlayer) solvePlayer.playVideo(); }, 500); }
+        async function finishIndQuiz() { const total = currentQuiz.q.filter(q => !q.noScore).length; if (ensureFirebase('Запис на резултат')) { const resRef = doc(collection(db, 'artifacts', appId, 'public', 'data', 'individual_results')); await setDoc(resRef, { studentName: studentNameValue, score: scoreCount, total, quizHash, timestamp: serverTimestamp() }); } switchScreen('finish'); document.getElementById('res-score').innerText = `${scoreCount} / ${total}`; }
 
-        function completeIndAnswer(isCorrect) {
-            indQuestionLocked = true;
-            clearQuestionTimers('ind');
-            if (isCorrect) scoreCount++;
-            
-            document.getElementById('ind-side-panel').classList.add('translate-x-full');
-            document.getElementById('solve-progress').innerText = `${currentQIndex + 1} / ${currentQuiz.q.length}`;
-            setTimeout(() => { if (solvePlayer) solvePlayer.playVideo(); }, 500);
-        }
-
-        async function finishIndQuiz() {
-            const total = currentQuiz.q.filter(q => !q.noScore).length;
-            if (ensureFirebase('Запис на резултат')) {
-                const resRef = doc(collection(db, 'artifacts', appId, 'public', 'data', 'individual_results'));
-                await setDoc(resRef, { studentName: studentNameValue, score: scoreCount, total, quizHash, timestamp: serverTimestamp() });
-            }
-            switchScreen('finish');
-            document.getElementById('res-score').innerText = `${scoreCount} / ${total}`;
-        }
-
-        // --- LIVE CLIENT ---
-        window.joinLiveSession = async () => {
-            const pin = document.getElementById('live-pin').value.trim();
-            studentNameValue = document.getElementById('live-student-name').value.trim();
-            if (!pin || !studentNameValue || !ensureFirebase('На живо')) return;
-            sessionID = pin;
-            switchScreen('live-client');
-            document.getElementById('my-avatar-display').innerText = selectedEmoji;
-            
-            try {
-                const pRef = doc(db, 'artifacts', appId, 'public', 'data', 'participants', user.uid);
-                await setDoc(pRef, { name: studentNameValue, sessionId: pin, avatar: selectedEmoji, score: 0, total: 0, finished: false });
-                const sRef = doc(db, 'artifacts', appId, 'public', 'data', 'sessions', pin);
-                unsubscribeSession = onSnapshot(sRef, (snap) => {
-                    const data = snap.data();
-                    if (!data) return;
-                    if (data.status === 'finishing') toggleClient('submit');
-                    else if (data.activeQ !== -1) showLiveQ(data.qData, data.activeQ);
-                    else toggleClient('waiting');
-                });
-            } catch (e) { console.error(e); }
-        };
-
+        // --- CLIENT ---
+        window.joinLiveSession = async () => { const pin = document.getElementById('live-pin').value.trim(); studentNameValue = document.getElementById('live-student-name').value.trim(); if (!pin || !studentNameValue || !ensureFirebase('На живо')) return; sessionID = pin; switchScreen('live-client'); document.getElementById('my-avatar-display').innerText = selectedEmoji; try { const pRef = doc(db, 'artifacts', appId, 'public', 'data', 'participants', user.uid); await setDoc(pRef, { name: studentNameValue, sessionId: pin, avatar: selectedEmoji, score: 0, total: 0, finished: false }); const sRef = doc(db, 'artifacts', appId, 'public', 'data', 'sessions', pin); unsubscribeSession = onSnapshot(sRef, (snap) => { const data = snap.data(); if (!data) return; if (data.status === 'finishing') toggleClient('submit'); else if (data.activeQ !== -1) showLiveQ(data.qData, data.activeQ); else toggleClient('waiting'); }); } catch (e) { console.error(e); } };
         function toggleClient(view) { ['waiting', 'question', 'feedback', 'submit', 'finish'].forEach(v => document.getElementById('client-' + v)?.classList.toggle('hidden', v !== view)); }
+        function showLiveQ(q, idx) { if (liveActiveQIdx === idx) return; liveActiveQIdx = idx; window.liveCurrentQuestion = q; liveQuestionLocked = false; toggleClient('question'); document.getElementById('live-q-text-client').innerText = q.text; document.getElementById('live-options-client').innerHTML = q.options.map((o, i) => `<button onclick="submitLive(${i})" class="w-full p-4 bg-slate-50 border-2 rounded-3xl font-bold mb-3 hover:border-indigo-600 transition-colors">${o}</button>`).join(''); startTimer(q.timeLimit, 'live'); }
+        window.submitLive = async (idx) => { if (liveQuestionLocked) return; liveQuestionLocked = true; clearQuestionTimers('live'); const isCorrect = window.liveCurrentQuestion.correct === idx; if (isCorrect) liveScore++; if (!window.liveCurrentQuestion.noScore) liveTotal++; const pRef = doc(db, 'artifacts', appId, 'public', 'data', 'participants', user.uid); await updateDoc(pRef, { score: liveScore, total: liveTotal }); toggleClient('feedback'); document.getElementById('live-feedback-text').innerText = isCorrect ? "ВЯРНО!" : "ГРЕШКА!"; const icon = document.getElementById('live-feedback-icon'); icon.className = `w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 text-white shadow-lg ${isCorrect ? 'bg-emerald-500' : 'bg-rose-500'}`; icon.innerHTML = `<i data-lucide="${isCorrect ? 'check' : 'x'}" class="w-10 h-10"></i>`; lucide.createIcons(); };
+        window.finishClientLive = async () => { const pRef = doc(db, 'artifacts', appId, 'public', 'data', 'participants', user.uid); await updateDoc(pRef, { finished: true }); switchScreen('finish'); document.getElementById('res-score').innerText = `${liveScore} / ${liveTotal}`; };
 
-        function showLiveQ(q, idx) {
-            if (liveActiveQIdx === idx) return;
-            liveActiveQIdx = idx;
-            window.liveCurrentQuestion = q;
-            liveQuestionLocked = false;
-            toggleClient('question');
-            document.getElementById('live-q-text-client').innerText = q.text;
-            document.getElementById('live-options-client').innerHTML = q.options.map((o, i) => `<button onclick="submitLive(${i})" class="w-full p-4 bg-slate-50 border-2 rounded-3xl font-bold mb-3 hover:border-indigo-600 transition-colors">${o}</button>`).join('');
-            startTimer(q.timeLimit, 'live');
-        }
-
-        window.submitLive = async (idx) => {
-            if (liveQuestionLocked) return;
-            liveQuestionLocked = true; clearQuestionTimers('live');
-            const isCorrect = window.liveCurrentQuestion.correct === idx;
-            if (isCorrect) liveScore++;
-            if (!window.liveCurrentQuestion.noScore) liveTotal++;
-            const pRef = doc(db, 'artifacts', appId, 'public', 'data', 'participants', user.uid);
-            await updateDoc(pRef, { score: liveScore, total: liveTotal });
-            toggleClient('feedback');
-            document.getElementById('live-feedback-text').innerText = isCorrect ? "ВЯРНО!" : "ГРЕШКА!";
-            const icon = document.getElementById('live-feedback-icon');
-            icon.className = `w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 text-white shadow-lg ${isCorrect ? 'bg-emerald-500' : 'bg-rose-500'}`;
-            icon.innerHTML = `<i data-lucide="${isCorrect ? 'check' : 'x'}" class="w-10 h-10"></i>`;
-            lucide.createIcons();
-        };
-
-        window.finishClientLive = async () => {
-            const pRef = doc(db, 'artifacts', appId, 'public', 'data', 'participants', user.uid);
-            await updateDoc(pRef, { finished: true });
-            switchScreen('finish');
-            document.getElementById('res-score').innerText = `${liveScore} / ${liveTotal}`;
-        };
-
-        // --- TIMER ---
-        function startTimer(sec, mode) {
-            if (!sec) return;
-            const el = document.getElementById(mode === 'live' ? 'live-timer' : 'ind-side-timer');
-            if (el) el.classList.remove('hidden');
-            let rem = sec;
-            const interval = setInterval(() => {
-                rem--;
-                if (el) el.innerText = `ОСТАВАТ: ${rem}s`;
-                if (rem <= 0) {
-                    clearInterval(interval);
-                    if (mode === 'live') submitLive(-1); else completeIndAnswer(false);
-                }
-            }, 1000);
-            if (mode === 'live') liveTimerInterval = interval; else indTimerInterval = interval;
-        }
-
-        function clearQuestionTimers(mode) {
-            if (mode === 'live' && liveTimerInterval) clearInterval(liveTimerInterval);
-            if (mode === 'ind' && indTimerInterval) clearInterval(indTimerInterval);
-            const el = document.getElementById(mode === 'live' ? 'live-timer' : 'ind-side-timer');
-            if (el) el.classList.add('hidden');
-        }
-
-        window.renderOrderList = (id, items) => {
-            const container = document.getElementById(id);
-            container.innerHTML = items.map((it, i) => `<div class="flex items-center justify-between p-2 bg-white border rounded-lg shadow-sm"><span>${it}</span><div class="flex gap-1"><button onclick="moveIndMove(${i}, -1)" class="p-1 bg-slate-100 rounded text-[10px]">↑</button><button onclick="moveIndMove(${i}, 1)" class="p-1 bg-slate-100 rounded text-[10px]">↓</button></div></div>`).join('');
-        };
-        window.moveIndMove = (i, d) => {
-            const target = i + d;
-            if (target < 0 || target >= indOrderState.length) return;
-            [indOrderState[i], indOrderState[target]] = [indOrderState[target], indOrderState[i]];
-            renderOrderList('ind-order-box', indOrderState);
-        };
-
+        // --- CORE UTILS ---
+        function startTimer(sec, mode) { if (!sec) return; const el = document.getElementById(mode === 'live' ? 'live-timer' : 'ind-side-timer'); if (el) el.classList.remove('hidden'); let rem = sec; const interval = setInterval(() => { rem--; if (el) el.innerText = `ОСТАВАТ: ${rem}s`; if (rem <= 0) { clearInterval(interval); if (mode === 'live') submitLive(-1); else completeIndAnswer(false); } }, 1000); if (mode === 'live') liveTimerInterval = interval; else indTimerInterval = interval; }
+        function clearQuestionTimers(mode) { if (mode === 'live' && liveTimerInterval) clearInterval(liveTimerInterval); if (mode === 'ind' && indTimerInterval) clearInterval(indTimerInterval); const el = document.getElementById(mode === 'live' ? 'live-timer' : 'ind-side-timer'); if (el) el.classList.add('hidden'); }
+        window.renderOrderList = (id, items) => { const container = document.getElementById(id); container.innerHTML = items.map((it, i) => `<div class="flex items-center justify-between p-2 bg-white border rounded-lg shadow-sm"><span>${it}</span><div class="flex gap-1"><button onclick="moveIndMove(${i}, -1)" class="p-1 bg-slate-100 rounded text-[10px]">↑</button><button onclick="moveIndMove(${i}, 1)" class="p-1 bg-slate-100 rounded text-[10px]">↓</button></div></div>`).join(''); };
+        window.moveIndMove = (i, d) => { const target = i + d; if (target < 0 || target >= indOrderState.length) return; [indOrderState[i], indOrderState[target]] = [indOrderState[target], indOrderState[i]]; renderOrderList('ind-order-box', indOrderState); };
         window.selectAvatar = (el, em) => { document.querySelectorAll('.avatar-option').forEach(o => o.classList.remove('selected')); el.classList.add('selected'); selectedEmoji = em; };
-
-        window.renderQuestionEditorFields = () => {
-            const type = document.getElementById('m-type').value;
-            const container = document.getElementById('m-opts');
-            container.innerHTML = '';
-            if (type === 'truefalse' || type === 'yesno') {
-                const labels = type === 'yesno' ? ['Да', 'Не'] : ['Вярно', 'Грешно'];
-                container.innerHTML = labels.map((l, i) => `<label class="flex items-center gap-2 p-2 bg-slate-50 border rounded-xl cursor-pointer"><input type="radio" name="m-correct" value="${i}" ${i === 0 ? 'checked' : ''}><span class="font-bold text-sm">${l}</span></label>`).join('');
-            } else if (type === 'order') {
-                container.innerHTML = [0, 1, 2, 3].map(i => `<input type="text" id="m-order-${i}" placeholder="Елемент ${i+1}" class="w-full px-3 py-2 bg-slate-50 border rounded-xl mb-2 text-sm font-bold">`).join('');
-            } else if (type === 'short') {
-                container.innerHTML = `<input type="text" id="m-short-answers" placeholder="напр: ДНК, DNA" class="w-full px-3 py-2 bg-slate-50 border rounded-xl text-sm font-bold">`;
-            } else if (type === 'emoji') {
-                container.innerHTML = `<p class="text-[11px] text-slate-500 italic">Свободен отговор с емотикон.</p>`;
-            } else {
-                container.innerHTML = [0, 1, 2].map(i => `<div class="flex items-center gap-2 mb-2"><input type="${type === 'multi' ? 'checkbox' : 'radio'}" name="m-correct" value="${i}" ${i === 0 ? 'checked' : ''}><input type="text" id="m-opt-${i}" placeholder="Опция ${i+1}" class="flex-1 px-3 py-2 bg-slate-50 border rounded-xl text-sm font-bold"></div>`).join('');
-            }
-        };
-
+        window.renderQuestionEditorFields = () => { const type = document.getElementById('m-type').value; const container = document.getElementById('m-opts'); container.innerHTML = ''; if (type === 'truefalse' || type === 'yesno') { const labels = type === 'yesno' ? ['Да', 'Не'] : ['Вярно', 'Грешно']; container.innerHTML = labels.map((l, i) => `<label class="flex items-center gap-2 p-2 bg-slate-50 border rounded-xl cursor-pointer"><input type="radio" name="m-correct" value="${i}" ${i === 0 ? 'checked' : ''}><span class="font-bold text-sm">${l}</span></label>`).join(''); } else if (type === 'order') container.innerHTML = [0, 1, 2, 3].map(i => `<input type="text" id="m-order-${i}" placeholder="Елемент ${i+1}" class="w-full px-3 py-2 bg-slate-50 border rounded-xl mb-2 text-sm font-bold">`).join(''); else if (type === 'short') container.innerHTML = `<input type="text" id="m-short-answers" placeholder="напр: ДНК, DNA" class="w-full px-3 py-2 bg-slate-50 border rounded-xl text-sm font-bold">`; else if (type === 'emoji') container.innerHTML = `<p class="text-[11px] text-slate-500 italic">Свободен отговор с емотикон.</p>`; else container.innerHTML = [0, 1, 2].map(i => `<div class="flex items-center gap-2 mb-2"><input type="${type === 'multi' ? 'checkbox' : 'radio'}" name="m-correct" value="${i}" ${i === 0 ? 'checked' : ''}><input type="text" id="m-opt-${i}" placeholder="Опция ${i+1}" class="flex-1 px-3 py-2 bg-slate-50 border rounded-xl text-sm font-bold"></div>`).join(''); };
     </script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
         body { font-family: 'Inter', sans-serif; background: #f8fafc; color: #1e293b; overflow-x: hidden; }
-        .video-container { position: relative; padding-bottom: 56.25%; height: 0; background: #000; border-radius: 1.5rem; overflow: hidden; box-shadow: 0 20px 40px -10px rgba(0,0,0,0.3); }
+        .video-container { position: relative; padding-bottom: 56.25%; height: 0; background: #000; border-radius: 1.5rem; overflow: hidden; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.5); }
         .video-container iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none; }
-        .custom-card { background: white; border: 1px solid #e2e8f0; border-radius: 2rem; }
+        .custom-card { background: white; border: 1px solid #e2e8f0; border-radius: 1.5rem; }
         .avatar-option { cursor: pointer; border: 2px solid transparent; border-radius: 1rem; transition: all 0.2s; }
         .avatar-option.selected { border-color: #4f46e5; background: #eef2ff; transform: scale(1.1); }
         .animate-pop { animation: pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
         @keyframes pop { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         .results-table { border-collapse: separate; border-spacing: 0; width: 100%; }
-        .results-table th { background: #f1f5f9; color: #64748b; font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; padding: 12px 8px; }
+        .results-table th { background: #f8fafc; color: #94a3b8; font-size: 9px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; padding: 10px 16px; border-bottom: 1px solid #f1f5f9; }
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
     </style>
 </head>
-<body class="min-h-screen p-4 md:p-8">
+<body class="min-h-screen p-4 md:p-6 lg:p-8">
 
     <div id="auth-loader" class="fixed inset-0 bg-indigo-600 z-[200] flex flex-col items-center justify-center text-white">
-        <div class="animate-spin rounded-full h-12 w-12 border-4 border-white/20 border-t-white mb-4"></div>
-        <p class="font-bold uppercase tracking-widest text-sm animate-pulse">Свързване с облака...</p>
+        <div class="animate-spin rounded-full h-10 w-10 border-4 border-white/20 border-t-white mb-4"></div>
+        <p class="font-bold uppercase tracking-widest text-xs animate-pulse">Инициализация...</p>
     </div>
 
     <div id="app" class="max-w-6xl mx-auto">
         
-        <!-- SCREEN: WELCOME -->
-        <div id="screen-welcome" class="space-y-12 py-12 text-center animate-pop">
+        <!-- WELCOME SCREEN -->
+        <div id="screen-welcome" class="space-y-12 py-10 text-center animate-pop">
             <div class="space-y-4">
                 <div class="inline-flex p-4 bg-indigo-600 rounded-3xl text-white shadow-xl">
-                    <i data-lucide="graduation-cap" class="w-12 h-12"></i>
+                    <i data-lucide="graduation-cap" class="w-10 h-10"></i>
                 </div>
                 <h1 class="text-5xl font-black text-slate-900">VideoQuiz <span class="text-indigo-600">Ultimate</span></h1>
-                <p class="text-slate-500">Интерактивно видео обучение от следващо поколение.</p>
+                <p class="text-slate-500 font-medium">Интерактивно видео обучение за ангажирани класове.</p>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-left">
-                <div class="custom-card p-8 space-y-6 shadow-sm border-t-4 border-slate-900">
-                    <div class="bg-slate-100 text-slate-900 w-12 h-12 rounded-2xl flex items-center justify-center"><i data-lucide="play"></i></div>
+                <!-- Individual Student Mode -->
+                <div class="custom-card p-8 space-y-6 shadow-sm border-b-4 border-slate-900">
+                    <div class="bg-slate-100 text-slate-900 w-12 h-12 rounded-2xl flex items-center justify-center">
+                        <i data-lucide="book-open-check"></i>
+                    </div>
                     <h2 class="text-xl font-bold">Индивидуален урок</h2>
-                    <input type="text" id="ind-student-name" placeholder="Твоето име..." class="w-full px-4 py-3 bg-slate-50 border rounded-xl font-bold outline-none">
-                    <input type="text" id="ind-quiz-code" placeholder="Код на урок..." class="w-full px-4 py-3 bg-slate-50 border rounded-xl font-bold outline-none">
-                    <button onclick="startIndividual()" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold hover:bg-black shadow-lg uppercase text-xs">ЗАПОЧНИ</button>
-                </div>
-
-                <div class="custom-card p-8 space-y-6 shadow-sm border-t-4 border-emerald-500">
-                    <div class="bg-emerald-100 text-emerald-600 w-12 h-12 rounded-2xl flex items-center justify-center"><i data-lucide="users"></i></div>
-                    <h2 class="text-xl font-bold">Ученик (Live)</h2>
-                    <input type="text" id="live-student-name" placeholder="Име..." class="w-full px-4 py-3 bg-slate-50 border rounded-xl font-bold outline-none">
-                    <div class="grid grid-cols-6 gap-2">
-                        <button onclick="selectAvatar(this, '🐱')" class="avatar-option p-2 text-xl selected">🐱</button>
-                        <button onclick="selectAvatar(this, '🐶')" class="avatar-option p-2 text-xl">🐶</button>
-                        <button onclick="selectAvatar(this, '🦁')" class="avatar-option p-2 text-xl">🦁</button>
-                        <button onclick="selectAvatar(this, '🐙')" class="avatar-option p-2 text-xl">🐙</button>
-                        <button onclick="selectAvatar(this, '🦄')" class="avatar-option p-2 text-xl">🦄</button>
-                        <button onclick="selectAvatar(this, '🐼')" class="avatar-option p-2 text-xl">🐼</button>
+                    <div class="space-y-3">
+                        <input type="text" id="ind-student-name" placeholder="Твоето име..." class="w-full px-4 py-3 bg-slate-50 border rounded-xl font-bold outline-none focus:ring-2 ring-indigo-500/20">
+                        <input type="text" id="ind-quiz-code" placeholder="Код на урок..." class="w-full px-4 py-3 bg-slate-50 border rounded-xl font-bold outline-none focus:ring-2 ring-indigo-500/20">
                     </div>
-                    <input type="text" id="live-pin" placeholder="PIN код..." class="w-full px-4 py-3 bg-slate-50 border rounded-xl font-bold outline-none">
-                    <button onclick="joinLiveSession()" class="w-full py-4 bg-emerald-500 text-white rounded-2xl font-bold hover:bg-emerald-600 shadow-lg uppercase text-xs">ВКЛЮЧИ СЕ</button>
+                    <button onclick="startIndividual()" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold hover:bg-black shadow-lg uppercase text-xs tracking-widest">ЗАПОЧНИ</button>
                 </div>
 
-                <div class="custom-card p-8 space-y-6 shadow-sm border-t-4 border-indigo-500">
-                    <div class="bg-indigo-100 text-indigo-600 w-12 h-12 rounded-2xl flex items-center justify-center"><i data-lucide="monitor"></i></div>
+                <!-- Live Student Mode -->
+                <div class="custom-card p-8 space-y-6 shadow-sm border-b-4 border-emerald-500">
+                    <div class="bg-emerald-100 text-emerald-600 w-12 h-12 rounded-2xl flex items-center justify-center">
+                        <i data-lucide="users-round"></i>
+                    </div>
+                    <h2 class="text-xl font-bold">Ученик (На живо)</h2>
+                    <div class="space-y-3">
+                        <input type="text" id="live-student-name" placeholder="Име..." class="w-full px-4 py-3 bg-slate-50 border rounded-xl font-bold outline-none">
+                        <div class="grid grid-cols-6 gap-1">
+                            <button onclick="selectAvatar(this, '🐱')" class="avatar-option p-1.5 text-lg selected">🐱</button>
+                            <button onclick="selectAvatar(this, '🐶')" class="avatar-option p-1.5 text-lg">🐶</button>
+                            <button onclick="selectAvatar(this, '🦁')" class="avatar-option p-1.5 text-lg">🦁</button>
+                            <button onclick="selectAvatar(this, '🐙')" class="avatar-option p-1.5 text-lg">🐙</button>
+                            <button onclick="selectAvatar(this, '🦄')" class="avatar-option p-1.5 text-lg">🦄</button>
+                            <button onclick="selectAvatar(this, '🐼')" class="avatar-option p-1.5 text-lg">🐼</button>
+                        </div>
+                        <input type="text" id="live-pin" placeholder="PIN код..." class="w-full px-4 py-3 bg-slate-50 border rounded-xl font-bold outline-none">
+                    </div>
+                    <button onclick="joinLiveSession()" class="w-full py-4 bg-emerald-500 text-white rounded-2xl font-bold hover:bg-emerald-600 shadow-lg uppercase text-xs tracking-widest">ВКЛЮЧИ СЕ</button>
+                </div>
+
+                <!-- Teacher Controls -->
+                <div class="custom-card p-8 space-y-6 shadow-sm border-b-4 border-indigo-500">
+                    <div class="bg-indigo-100 text-indigo-600 w-12 h-12 rounded-2xl flex items-center justify-center">
+                        <i data-lucide="presentation"></i>
+                    </div>
                     <h2 class="text-xl font-bold">За учителя</h2>
-                    <button onclick="openLiveHost()" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 shadow-lg uppercase text-xs">ТАБЛО ЗА УПРАВЛЕНИЕ</button>
-                    <button onclick="switchScreen('create')" class="w-full py-3 bg-slate-100 text-slate-600 rounded-2xl font-bold text-xs uppercase">РЕДАКТОР НА УРОЦИ</button>
+                    <div class="space-y-3">
+                        <button onclick="openLiveHost()" class="w-full py-5 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 shadow-lg uppercase text-xs tracking-widest">ХОСТВАНЕ НА ЖИВО</button>
+                        <button onclick="toggleIndHistory()" class="w-full py-4 bg-indigo-50 text-indigo-600 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-indigo-100 transition-colors">
+                            <i data-lucide="history" class="w-4 h-4"></i> ИНДИВИДУАЛНИ РЕЗУЛТАТИ
+                        </button>
+                        <button onclick="switchScreen('create')" class="w-full py-3 bg-slate-100 text-slate-600 rounded-2xl font-bold text-[10px] uppercase tracking-widest">РЕДАКТОР НА УРОЦИ</button>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- SCREEN: CREATE -->
-        <div id="screen-create" class="hidden space-y-6 animate-pop">
-            <div class="custom-card p-4 flex gap-4 items-center">
-                <button onclick="switchScreen('welcome')" class="bg-slate-100 p-2 rounded-xl text-slate-600"><i data-lucide="chevron-left"></i></button>
-                <input type="text" id="yt-url" placeholder="YouTube линк..." class="flex-1 px-4 py-2 bg-slate-50 border rounded-xl outline-none">
-                <button onclick="loadEditorVideo()" class="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold">ЗАРЕДИ</button>
-                <button onclick="exportQuiz()" class="bg-slate-900 text-white px-6 py-2 rounded-xl font-bold">ЕКСПОРТ</button>
-            </div>
-            <div id="editor-view" class="hidden grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <div class="lg:col-span-2 space-y-4">
-                    <div class="video-container"><div id="player"></div></div>
-                    <div class="bg-white p-6 rounded-3xl border flex justify-between items-center">
-                        <div class="text-3xl font-mono font-bold text-indigo-600" id="timer">00:00</div>
-                        <button onclick="openQModal()" class="bg-rose-500 text-white px-8 py-4 rounded-2xl font-bold shadow-lg">ДОБАВИ ВЪПРОС ТУК</button>
+        <!-- TEACHER LIVE DASHBOARD -->
+        <div id="screen-live-host" class="hidden space-y-6 animate-pop">
+            <div class="flex flex-wrap items-center justify-between gap-4">
+                <div class="flex items-center gap-3">
+                    <div class="bg-indigo-600 text-white px-5 py-2 rounded-2xl font-black text-2xl shadow-lg border-b-4 border-indigo-800" id="host-pin">----</div>
+                    <div class="flex flex-col">
+                        <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">PIN код</span>
+                        <div class="text-xs font-bold text-slate-600 flex items-center gap-1"><i data-lucide="users" class="w-3 h-3"></i> <span id="host-participant-count">0</span></div>
                     </div>
                 </div>
-                <div class="custom-card p-6 h-[500px] overflow-y-auto" id="q-list"></div>
-            </div>
-        </div>
-
-        <!-- SCREEN: SOLVE INDIVIDUAL (Side Panel Version) -->
-        <div id="screen-solve" class="hidden relative h-[80vh] flex overflow-hidden rounded-[2.5rem] shadow-2xl bg-black animate-pop">
-            <!-- Left: Video -->
-            <div class="flex-1 relative">
-                <div id="solve-player" class="w-full h-full"></div>
-                <div class="absolute bottom-4 left-4 bg-indigo-600/80 backdrop-blur px-4 py-1 rounded-full text-white text-[10px] font-black uppercase">
-                    Напредък: <span id="solve-progress">0 / 0</span>
-                </div>
-                <button onclick="location.reload()" class="absolute top-4 left-4 p-2 bg-white/20 hover:bg-white/40 rounded-full text-white backdrop-blur transition-all"><i data-lucide="x"></i></button>
-            </div>
-
-            <!-- Right: Side Question Panel -->
-            <div id="ind-side-panel" class="w-80 h-full bg-white transition-transform duration-500 translate-x-full flex flex-col p-8 z-50">
-                <div class="mb-4 flex items-center gap-2">
-                    <div class="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></div>
-                    <span id="ind-side-timer" class="text-[10px] font-black uppercase text-rose-500">Остават: --s</span>
-                </div>
-                <h3 id="ind-side-q-text" class="text-xl font-black mb-8 leading-tight text-slate-800">...</h3>
-                <div id="ind-side-options" class="space-y-3 flex-1 overflow-y-auto custom-scrollbar pr-2"></div>
-            </div>
-        </div>
-
-        <!-- SCREEN: LIVE HOST -->
-        <div id="screen-live-host" class="hidden space-y-8 animate-pop">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="custom-card p-6 shadow-sm border-t-4 border-indigo-600 flex flex-col items-center justify-center space-y-2">
-                    <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">PIN код</span>
-                    <div class="text-5xl font-black text-indigo-600" id="host-pin">----</div>
-                </div>
-                <div class="custom-card p-6 shadow-sm border-t-4 border-emerald-500 flex flex-col items-center justify-center space-y-2">
-                    <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Успех на класа</span>
-                    <div class="text-5xl font-black text-emerald-600" id="class-average">0%</div>
-                </div>
-                <div class="custom-card p-6 shadow-sm border-t-4 border-indigo-100 flex flex-col items-center justify-center space-y-2">
-                    <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Урок</span>
-                    <div class="flex gap-2 w-full"><input type="text" id="host-quiz-code" placeholder="Код..." class="flex-1 px-3 py-2 bg-slate-50 border rounded-xl font-bold text-xs outline-none text-center uppercase tracking-widest"><button onclick="setupLiveHostQuiz()" class="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] uppercase">СТАРТ</button></div>
-                </div>
-            </div>
-
-            <div id="host-player-area" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-8">
-                <div class="lg:col-span-8 space-y-6">
-                    <div class="video-container"><div id="host-video"></div></div>
-                    <div class="bg-white p-6 rounded-3xl border shadow-md flex justify-between items-center">
-                        <div class="flex flex-col"><span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Време</span><div class="text-3xl font-mono font-bold text-indigo-600" id="host-timer">00:00</div></div>
-                        <button onclick="endLiveSession()" class="bg-rose-500 text-white px-6 py-3 rounded-2xl font-black text-xs uppercase hover:bg-rose-600 shadow-lg transition-transform hover:scale-105">КРАЙ НА УРОКА</button>
+                <div class="flex items-center gap-4">
+                    <div class="flex flex-col items-end">
+                        <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Успех</span>
+                        <div class="text-xl font-black text-emerald-600" id="class-average">0%</div>
                     </div>
+                    <div class="h-10 w-px bg-slate-200"></div>
                 </div>
-
-                <div class="lg:col-span-4 space-y-6 flex flex-col">
-                    <!-- Live Results -->
-                    <div class="custom-card shadow-sm flex-1 flex flex-col overflow-hidden max-h-[400px]">
-                        <div class="p-4 bg-slate-50 border-b flex items-center justify-between"><h3 class="font-black text-[10px] uppercase text-slate-500 tracking-widest">Резултати на живо</h3><span id="host-participant-count" class="bg-indigo-600 text-white px-2 py-0.5 rounded text-[10px] font-black">0</span></div>
-                        <div class="flex-1 overflow-y-auto custom-scrollbar"><table class="results-table"><thead><tr><th class="text-left">Ученик</th><th>Точки</th><th>Статус</th></tr></thead><tbody id="host-results-body"></tbody></table></div>
+                <div class="flex gap-2 bg-white p-2 rounded-2xl shadow-sm border flex-1 md:flex-none">
+                    <input type="text" id="host-quiz-code" placeholder="Код на урок..." class="w-32 px-3 py-2 bg-slate-50 rounded-xl font-bold text-xs outline-none uppercase tracking-widest">
+                    <button onclick="setupLiveHostQuiz()" class="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] uppercase tracking-widest">ЗАРЕДИ</button>
+                </div>
+            </div>
+            <div id="host-player-area" class="hidden space-y-6">
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    <div class="lg:col-span-8 space-y-6">
+                        <div class="video-container"><div id="host-video"></div></div>
+                        <div class="custom-card shadow-sm overflow-hidden flex flex-col border-b-4 border-indigo-100">
+                            <div class="p-4 bg-slate-50/50 border-b flex items-center justify-between">
+                                <h3 class="font-black text-[10px] uppercase text-slate-500 tracking-widest flex items-center gap-2"><i data-lucide="zap" class="w-3 h-3 text-indigo-500"></i> Резултати на живо</h3>
+                                <div class="text-[10px] font-black text-indigo-600" id="host-timer">00:00</div>
+                            </div>
+                            <div class="max-h-[350px] overflow-y-auto custom-scrollbar">
+                                <table class="results-table">
+                                    <thead><tr><th class="text-left">Ученик</th><th>Резултат</th><th>Статус</th></tr></thead>
+                                    <tbody id="host-results-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
-                    <!-- Individual History -->
-                    <div class="custom-card shadow-sm flex-1 flex flex-col overflow-hidden max-h-[300px]">
-                        <div class="p-4 bg-indigo-50 border-b"><h3 class="font-black text-[10px] uppercase text-indigo-600 tracking-widest">Индивидуални резултати</h3></div>
-                        <div class="flex-1 overflow-y-auto custom-scrollbar p-2">
-                            <table class="w-full">
-                                <tbody id="host-ind-results-body"></tbody>
-                            </table>
+                    <div class="lg:col-span-4 space-y-4">
+                        <div class="custom-card p-6 bg-rose-50 border-rose-100 text-center space-y-4">
+                            <i data-lucide="power" class="w-8 h-8 mx-auto text-rose-500"></i>
+                            <h4 class="font-black text-xs text-rose-900 uppercase tracking-widest">Управление на сесия</h4>
+                            <p class="text-[10px] text-rose-600 leading-relaxed font-medium">Край на урока ще спре видеото и ще прехвърли учениците към предаване на отговорите.</p>
+                            <button onclick="endLiveSession()" class="w-full py-4 bg-rose-500 text-white rounded-2xl font-black text-xs uppercase shadow-lg hover:bg-rose-600 transition-all">КРАЙ НА УРОКА</button>
+                        </div>
+                        <div class="custom-card p-6 border-slate-100 text-center">
+                            <i data-lucide="info" class="w-6 h-6 mx-auto text-slate-400 mb-2"></i>
+                            <p class="text-[10px] text-slate-400 italic">Видео плейърът ще паузира автоматично на всеки въпрос, за да даде време на класа.</p>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- CLIENT SCREENS -->
-        <div id="screen-live-client" class="hidden min-h-[60vh] flex flex-col items-center justify-center space-y-8 animate-pop text-center">
-            <div id="client-waiting" class="space-y-4">
-                <div id="my-avatar-display" class="w-24 h-24 bg-indigo-100 rounded-full flex items-center justify-center mx-auto text-4xl animate-bounce shadow-2xl"></div>
-                <h2 class="text-2xl font-black">Свързан си!</h2>
-                <p class="text-emerald-500 font-bold animate-pulse">Изчакай учителя...</p>
-            </div>
-            <div id="client-question" class="hidden w-full max-w-md bg-white p-8 rounded-[3rem] shadow-2xl">
-                <h3 id="live-q-text-client" class="text-2xl font-bold mb-8 leading-tight text-left">...</h3>
-                <div id="live-timer" class="hidden text-xs font-black text-rose-500 mb-4 tracking-widest uppercase">Остават: --s</div>
-                <div id="live-options-client" class="space-y-3"></div>
-            </div>
-            <div id="client-feedback" class="hidden animate-pop">
-                <div id="live-feedback-icon" class="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 shadow-xl"></div>
-                <h3 id="live-feedback-text" class="text-3xl font-black uppercase">...</h3>
-                <p class="text-slate-400 text-xs mt-4">Виж големия екран за следващата стъпка</p>
-            </div>
-            <div id="client-submit" class="hidden space-y-6 animate-pop">
-                <div class="w-20 h-20 bg-indigo-600 rounded-full flex items-center justify-center mx-auto shadow-xl text-white"><i data-lucide="send"></i></div>
-                <h2 class="text-2xl font-black leading-tight">Браво!<br>Урокът приключи.</h2>
-                <button onclick="finishClientLive()" class="px-10 py-5 bg-indigo-600 text-white rounded-[2rem] font-black shadow-xl uppercase tracking-widest hover:scale-105 transition-all">ПРЕДАЙ ОТГОВОРИ</button>
+        <!-- INDIVIDUAL RESULTS MODAL -->
+        <div id="modal-ind-history" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden items-center justify-center p-4 z-[150]">
+            <div class="bg-white w-full max-w-2xl rounded-[2.5rem] p-8 md:p-10 animate-pop flex flex-col max-h-[85vh] shadow-2xl">
+                <div class="flex items-center justify-between mb-8">
+                    <div class="flex items-center gap-3">
+                        <div class="bg-indigo-100 p-2.5 rounded-xl text-indigo-600"><i data-lucide="history"></i></div>
+                        <h2 class="text-xl font-black text-slate-800 tracking-tighter uppercase">Индивидуални резултати</h2>
+                    </div>
+                    <button onclick="toggleIndHistory()" class="p-2 bg-slate-50 hover:bg-slate-100 rounded-full transition-colors"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+                <div class="flex-1 overflow-y-auto custom-scrollbar pr-2">
+                    <table class="w-full text-left">
+                        <thead class="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b">
+                            <tr><th class="pb-3 px-2">Ученик</th><th class="pb-3 text-center">Резултат</th><th class="pb-3 text-right">Код на урок</th></tr>
+                        </thead>
+                        <tbody id="host-ind-results-body"></tbody>
+                    </table>
+                </div>
+                <div class="mt-6 pt-4 border-t text-center">
+                    <button onclick="toggleIndHistory()" class="px-8 py-3 bg-slate-900 text-white rounded-xl font-black text-[10px] uppercase tracking-widest">Затвори</button>
+                </div>
             </div>
         </div>
 
-        <!-- SCREEN: FINISH -->
-        <div id="screen-finish" class="hidden py-20 text-center space-y-8 animate-pop">
-            <div class="bg-yellow-400 w-24 h-24 rounded-full flex items-center justify-center mx-auto shadow-2xl text-white"><i data-lucide="trophy" class="w-12 h-12"></i></div>
-            <h2 class="text-4xl font-black uppercase">ТВОЯТ РЕЗУЛТАТ</h2>
-            <div class="text-8xl font-black text-indigo-600" id="res-score">...</div>
-            <button onclick="location.reload()" class="px-12 py-4 bg-slate-900 text-white rounded-3xl font-bold shadow-xl uppercase text-xs tracking-widest">Към началото</button>
+        <!-- SOLVE SCREEN -->
+        <div id="screen-solve" class="hidden relative h-[80vh] flex overflow-hidden rounded-[2.5rem] shadow-2xl bg-black animate-pop">
+            <div class="flex-1 relative">
+                <div id="solve-player" class="w-full h-full"></div>
+                <div class="absolute bottom-6 left-6 bg-indigo-600/90 backdrop-blur px-5 py-2 rounded-full text-white text-[10px] font-black uppercase tracking-widest shadow-xl">
+                    Напредък: <span id="solve-progress">0 / 0</span>
+                </div>
+                <button onclick="location.reload()" class="absolute top-6 left-6 p-3 bg-white/10 hover:bg-white/30 rounded-full text-white backdrop-blur transition-all"><i data-lucide="x"></i></button>
+            </div>
+            <div id="ind-side-panel" class="w-80 h-full bg-white transition-transform duration-500 translate-x-full flex flex-col p-10 z-50 border-l">
+                <div class="mb-4 flex items-center gap-2">
+                    <div class="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></div>
+                    <span id="ind-side-timer" class="text-[10px] font-black uppercase text-rose-500 tracking-widest">--s</span>
+                </div>
+                <h3 id="ind-side-q-text" class="text-xl font-black mb-10 leading-tight text-slate-800">...</h3>
+                <div id="ind-side-options" class="space-y-3 flex-1 overflow-y-auto custom-scrollbar pr-2"></div>
+            </div>
+        </div>
+
+        <!-- LIVE CLIENT SCREEN -->
+        <div id="screen-live-client" class="hidden min-h-[60vh] flex flex-col items-center justify-center space-y-8 animate-pop text-center">
+            <div id="client-waiting" class="space-y-4">
+                <div id="my-avatar-display" class="w-24 h-24 bg-indigo-100 rounded-full flex items-center justify-center mx-auto text-4xl animate-bounce shadow-2xl border-4 border-white"></div>
+                <h2 class="text-2xl font-black">Свързан си!</h2>
+                <p class="text-emerald-500 font-bold animate-pulse uppercase text-xs tracking-widest">Изчакай учителя...</p>
+            </div>
+            <div id="client-question" class="hidden w-full max-w-md bg-white p-10 rounded-[3rem] shadow-2xl border-b-8 border-indigo-100">
+                <h3 id="live-q-text-client" class="text-2xl font-black mb-10 leading-tight text-left text-slate-800">...</h3>
+                <div id="live-timer" class="hidden text-[10px] font-black text-rose-500 mb-6 tracking-widest uppercase">Остават: --s</div>
+                <div id="live-options-client" class="space-y-3"></div>
+            </div>
+            <div id="client-feedback" class="hidden animate-pop">
+                <div id="live-feedback-icon" class="w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 shadow-2xl border-4 border-white text-white"></div>
+                <h3 id="live-feedback-text" class="text-4xl font-black uppercase text-slate-800">...</h3>
+                <p class="text-slate-400 font-bold mt-6 text-sm">Погледни големия екран</p>
+            </div>
+            <div id="client-submit" class="hidden space-y-8 animate-pop">
+                <div class="w-24 h-24 bg-indigo-600 rounded-full flex items-center justify-center mx-auto shadow-2xl text-white"><i data-lucide="send" class="w-10 h-10"></i></div>
+                <h2 class="text-3xl font-black leading-tight text-slate-800">Урокът приключи.</h2>
+                <button onclick="finishClientLive()" class="px-12 py-6 bg-indigo-600 text-white rounded-[2.5rem] font-black shadow-2xl uppercase tracking-widest hover:scale-105 transition-all text-sm">ПРЕДАЙ ОТГОВОРИ</button>
+            </div>
+        </div>
+
+        <!-- CREATE SCREEN -->
+        <div id="screen-create" class="hidden space-y-6 animate-pop">
+            <div class="custom-card p-4 flex gap-4 items-center shadow-sm">
+                <button onclick="switchScreen('welcome')" class="bg-slate-50 p-3 rounded-2xl text-slate-400 hover:text-slate-600 transition-colors"><i data-lucide="chevron-left"></i></button>
+                <div class="flex-1 relative">
+                    <i data-lucide="link" class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300"></i>
+                    <input type="text" id="yt-url" placeholder="YouTube линк към видео..." class="w-full pl-12 pr-4 py-3 bg-slate-50 border-none rounded-2xl font-bold outline-none ring-2 ring-transparent focus:ring-indigo-500/20 transition-all">
+                </div>
+                <button onclick="loadEditorVideo()" class="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-bold shadow-lg hover:bg-indigo-700 transition-all uppercase text-xs">ЗАРЕДИ</button>
+                <button onclick="exportQuiz()" class="bg-slate-900 text-white px-8 py-3 rounded-2xl font-bold hover:bg-black transition-all uppercase text-xs">ЕКСПОРТ</button>
+            </div>
+            <div id="editor-view" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-8">
+                <div class="lg:col-span-8 space-y-4">
+                    <div class="video-container"><div id="player"></div></div>
+                    <div class="bg-white p-6 rounded-[2rem] border shadow-sm flex justify-between items-center">
+                        <div class="text-4xl font-mono font-black text-indigo-600" id="timer">00:00</div>
+                        <button onclick="openQModal()" class="bg-rose-500 text-white px-10 py-5 rounded-2xl font-black shadow-xl hover:bg-rose-600 transition-all uppercase text-xs tracking-widest">ДОБАВИ ВЪПРОС</button>
+                    </div>
+                </div>
+                <div class="lg:col-span-4 custom-card p-6 h-[600px] overflow-y-auto custom-scrollbar flex flex-col">
+                    <h3 class="font-black text-[10px] uppercase text-slate-400 tracking-widest mb-6 border-b pb-4">Списък с въпроси</h3>
+                    <div id="q-list" class="space-y-3"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- FINISH SCREEN -->
+        <div id="screen-finish" class="hidden py-24 text-center space-y-10 animate-pop">
+            <div class="bg-yellow-400 w-28 h-28 rounded-full flex items-center justify-center mx-auto shadow-2xl text-white animate-bounce border-8 border-white"><i data-lucide="trophy" class="w-12 h-12"></i></div>
+            <div class="space-y-2">
+                <h2 class="text-4xl font-black uppercase text-slate-800 tracking-tighter">ТВОЯТ РЕЗУЛТАТ</h2>
+                <p class="text-slate-400 font-bold uppercase text-[10px] tracking-widest">Отлична работа!</p>
+            </div>
+            <div class="text-9xl font-black text-indigo-600 drop-shadow-2xl" id="res-score">...</div>
+            <button onclick="location.reload()" class="px-16 py-5 bg-slate-900 text-white rounded-[2.5rem] font-black shadow-2xl uppercase text-xs tracking-[0.2em] hover:bg-black transition-all">Към началото</button>
         </div>
 
     </div>
 
-    <!-- MODALS -->
+    <!-- GLOBAL MODALS -->
     <div id="modal-q" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden items-center justify-center p-4 z-[100]">
-        <div class="bg-white w-full max-w-md rounded-[2.5rem] p-10 animate-pop text-sm">
-            <h2 class="text-xl font-bold mb-6">Въпрос в <span id="m-time" class="text-indigo-600">00:00</span></h2>
-            <div class="space-y-4">
-                <input type="text" id="m-text" placeholder="Текст на въпроса..." class="w-full px-4 py-3 bg-slate-50 border rounded-xl font-bold outline-none">
-                <select id="m-type" onchange="renderQuestionEditorFields()" class="w-full px-4 py-3 bg-slate-50 border rounded-xl font-bold outline-none"><option value="single">Един верен отговор</option><option value="multi">Множество верни</option><option value="truefalse">Вярно / Грешно</option><option value="short">Кратък отговор</option><option value="order">Подреждане</option><option value="emoji">Емоция</option></select>
-                <div id="m-opts"></div>
-                <input type="number" id="m-time-limit" placeholder="Време за отговор (сек)..." class="w-full px-4 py-3 bg-slate-50 border rounded-xl font-bold outline-none">
-                <div class="flex gap-2"><button onclick="document.getElementById('modal-q').classList.add('hidden')" class="flex-1 py-4 bg-slate-100 rounded-2xl font-bold text-slate-500 uppercase text-[10px]">Отказ</button><button onclick="saveQuestionToEditor()" class="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg uppercase text-[10px]">Запази</button></div>
+        <div class="bg-white w-full max-w-md rounded-[3rem] p-10 animate-pop">
+            <h2 class="text-xl font-black mb-8 text-slate-800">Нов въпрос в <span id="m-time" class="text-indigo-600">00:00</span></h2>
+            <div class="space-y-6">
+                <div class="space-y-1">
+                    <label class="text-[10px] font-black uppercase text-slate-400 ml-1">Текст</label>
+                    <input type="text" id="m-text" class="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl font-bold outline-none focus:ring-2 ring-indigo-500/20">
+                </div>
+                <div class="space-y-1">
+                    <label class="text-[10px] font-black uppercase text-slate-400 ml-1">Тип отговор</label>
+                    <select id="m-type" onchange="renderQuestionEditorFields()" class="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl font-bold outline-none cursor-pointer">
+                        <option value="single">Един верен отговор</option>
+                        <option value="multi">Множество верни</option>
+                        <option value="truefalse">Вярно / Грешно</option>
+                        <option value="short">Кратък отговор</option>
+                        <option value="order">Подреждане</option>
+                        <option value="emoji">Емоция</option>
+                    </select>
+                </div>
+                <div id="m-opts" class="max-h-40 overflow-y-auto custom-scrollbar px-1"></div>
+                <div class="space-y-1">
+                    <label class="text-[10px] font-black uppercase text-slate-400 ml-1">Време (сек)</label>
+                    <input type="number" id="m-time-limit" placeholder="Без ограничение..." class="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl font-bold outline-none">
+                </div>
+                <div class="flex gap-3 pt-4">
+                    <button onclick="document.getElementById('modal-q').classList.add('hidden')" class="flex-1 py-5 bg-slate-100 rounded-2xl font-bold text-slate-500 uppercase text-[10px] tracking-widest">Отказ</button>
+                    <button onclick="saveQuestionToEditor()" class="flex-1 py-5 bg-indigo-600 text-white rounded-2xl font-black shadow-xl uppercase text-[10px] tracking-widest">Запази</button>
+                </div>
             </div>
         </div>
     </div>
 
     <div id="modal-export" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden items-center justify-center p-4 z-[100]">
         <div class="bg-white w-full max-w-md rounded-[3rem] p-10 text-center animate-pop">
-            <h2 class="text-xl font-bold mb-4">Урокът е генериран!</h2>
-            <textarea id="export-textarea" readonly class="w-full h-32 p-4 bg-slate-50 border rounded-2xl text-[10px] font-mono mb-6 outline-none focus:ring-0"></textarea>
-            <button onclick="document.getElementById('modal-export').classList.add('hidden')" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold uppercase text-xs shadow-lg">ЗАТВОРИ</button>
+            <h2 class="text-xl font-black mb-4">Урокът е генериран!</h2>
+            <textarea id="export-textarea" readonly class="w-full h-32 p-5 bg-slate-50 border-none rounded-[2rem] text-[10px] font-mono mb-8 outline-none focus:ring-0 resize-none"></textarea>
+            <button onclick="document.getElementById('modal-export').classList.add('hidden')" class="w-full py-5 bg-indigo-600 text-white rounded-[2rem] font-black uppercase text-xs shadow-xl tracking-widest">ЗАТВОРИ</button>
         </div>
     </div>
 
