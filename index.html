@@ -13,9 +13,14 @@
         import { getFirestore, collection, doc, setDoc, getDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, query, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
-        // Firebase Config & Init
+        // Firebase Configuration (provided by environment)
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'ultimate-video-quiz-v12';
-        const firebaseConfig = JSON.parse(__firebase_config);
+        let firebaseConfig = {};
+        try {
+            firebaseConfig = JSON.parse(__firebase_config);
+        } catch (e) {
+            console.error("Firebase config error:", e);
+        }
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
@@ -47,7 +52,6 @@
                 } else {
                     await signInAnonymously(auth);
                 }
-                firebaseReady = true;
             } catch (error) {
                 console.error("Auth Failure:", error);
             }
@@ -64,12 +68,14 @@
 
         const ensureFirebase = (featureName) => { 
             if (!firebaseReady || !user) { 
-                const msg = `Функцията '${featureName}' изисква активна връзка. Моля, изчакайте зареждането...`;
-                console.warn(msg);
                 return false; 
             } 
             return true; 
         };
+
+        // --- YOUTUBE API ---
+        const loadYT = () => { if (!window.YT) { const tag = document.createElement('script'); tag.src = "https://www.youtube.com/iframe_api"; document.head.appendChild(tag); } };
+        loadYT();
 
         // --- UTILS ---
         const formatTime = (s) => { const m = Math.floor(s / 60), r = Math.floor(s % 60); return `${m < 10 ? '0' + m : m}:${r < 10 ? '0' + r : r}`; };
@@ -105,68 +111,38 @@
         };
 
         // --- FIREBASE LISTENERS ---
-
         function listenIndividualResults() {
-            if (!user) return; // Guard Rule 3
-            
-            // Покажи индикатор за зареждане
-            document.getElementById('host-ind-results-body').innerHTML = '<tr><td colspan="5" class="text-center py-20"><div class="animate-spin inline-block w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full"></div><p class="mt-4 text-[10px] font-black uppercase text-slate-400">Извличане на данни...</p></td></tr>';
-
+            if (!user) return;
+            document.getElementById('host-ind-results-body').innerHTML = '<tr><td colspan="5" class="text-center py-20"><div class="animate-spin inline-block w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full"></div></td></tr>';
             const qRef = collection(db, 'artifacts', appId, 'public', 'data', 'individual_results');
-            
             unsubscribeIndividual = onSnapshot(qRef, (snap) => {
-                const list = snap.docs.map(d => ({...d.data(), id: d.id}))
-                    .sort((a,b) => {
-                        const timeA = a.timestamp?.seconds || Date.now() / 1000;
-                        const timeB = b.timestamp?.seconds || Date.now() / 1000;
-                        return timeB - timeA;
-                    });
-                
+                const list = snap.docs.map(d => ({...d.data(), id: d.id})).sort((a,b) => (b.timestamp?.seconds || Date.now()/1000) - (a.timestamp?.seconds || Date.now()/1000));
                 window.indParticipantsData = list; 
-                
-                const body = document.getElementById('host-ind-results-body');
-                if (list.length === 0) {
-                    body.innerHTML = '<tr><td colspan="5" class="text-center py-20 text-slate-300 italic">Няма открити индивидуални опити.</td></tr>';
-                } else {
-                    body.innerHTML = list.map((r, i) => `
-                        <tr class="border-b border-slate-50 text-[11px] hover:bg-slate-50/50 group animate-pop">
-                            <td class="py-4 px-4 font-bold text-slate-700">${r.studentName || 'Анонимен'}</td>
-                            <td class="py-4 text-center text-indigo-600 font-black">${r.score} / ${r.total}</td>
-                            <td class="py-4 text-center font-medium text-slate-500">${formatDateTime(r.timestamp)}</td>
-                            <td class="py-4 text-center">
-                                <div class="flex items-center justify-center gap-2">
-                                    <button onclick="showReport('${r.id}', 'ind')" class="p-2 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-600 hover:text-white transition-all shadow-sm"><i data-lucide="eye" class="w-3.5 h-3.5"></i></button>
-                                    <button onclick="deleteIndividualResult('${r.id}')" class="p-2 bg-rose-50 text-rose-400 rounded-xl hover:bg-rose-500 hover:text-white transition-all shadow-sm opacity-0 group-hover:opacity-100"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
-                                </div>
-                            </td>
-                            <td class="py-4 px-4 text-right opacity-30 font-mono text-[8px]">${r.quizHash || 'N/A'}</td>
-                        </tr>`).join('');
-                }
+                document.getElementById('host-ind-results-body').innerHTML = list.map(r => `
+                    <tr class="border-b border-slate-50 text-[11px] hover:bg-slate-50/50 group animate-pop">
+                        <td class="py-4 px-4 font-bold text-slate-700">${r.studentName || 'Анонимен'}</td>
+                        <td class="py-4 text-center text-indigo-600 font-black">${r.score} / ${r.total}</td>
+                        <td class="py-4 text-center font-medium text-slate-500">${formatDateTime(r.timestamp)}</td>
+                        <td class="py-4 text-center">
+                            <div class="flex items-center justify-center gap-2">
+                                <button onclick="showReport('${r.id}', 'ind')" class="p-2 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-600 hover:text-white transition-all"><i data-lucide="eye" class="w-3.5 h-3.5"></i></button>
+                                <button onclick="deleteIndividualResult('${r.id}')" class="p-2 bg-rose-50 text-rose-400 rounded-xl hover:bg-rose-500 hover:text-white transition-all shadow-sm opacity-0 group-hover:opacity-100"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                            </div>
+                        </td>
+                        <td class="py-4 px-4 text-right opacity-30 font-mono text-[8px]">${r.quizHash || 'N/A'}</td>
+                    </tr>`).join('') || '<tr><td colspan="5" class="text-center py-10 text-slate-300 italic">Няма открити опити.</td></tr>';
                 lucide.createIcons();
-            }, (error) => {
-                console.error("Firestore Listener Error:", error);
-                document.getElementById('host-ind-results-body').innerHTML = `<tr><td colspan="5" class="text-center py-20 text-rose-500 font-bold uppercase text-[10px]">Грешка при връзка с базата данни</td></tr>`;
             });
         }
 
-        window.toggleIndHistory = async () => {
-            if (!ensureFirebase('Резултати')) {
-                alert("Моля, изчакайте секунда, системата се свързва с облака...");
-                return;
-            }
+        window.toggleIndHistory = () => {
             const modal = document.getElementById('modal-ind-history');
             const isOpen = !modal.classList.contains('hidden');
-            if(!isOpen) {
-                modal.classList.remove('hidden'); modal.classList.add('flex');
-                listenIndividualResults();
-            } else {
-                modal.classList.add('hidden'); modal.classList.remove('flex');
-                if (unsubscribeIndividual) { unsubscribeIndividual(); unsubscribeIndividual = null; }
-            }
+            if(!isOpen) { modal.classList.remove('hidden'); modal.classList.add('flex'); listenIndividualResults(); }
+            else { modal.classList.add('hidden'); modal.classList.remove('flex'); if (unsubscribeIndividual) unsubscribeIndividual(); }
         };
 
-        // --- CORE LOGIC ---
-
+        // --- EDITOR LOGIC ---
         window.loadEditorVideo = () => {
             const url = document.getElementById('yt-url').value;
             const id = extractID(url);
@@ -186,7 +162,6 @@
             if (!text) return alert("Въведи текст!");
             const time = editQuestionIndex >= 0 ? questions[editQuestionIndex].time : Math.floor(player.getCurrentTime());
             let q = { time, text, type, timeLimit: parseInt(document.getElementById('m-time-limit').value) || 0 };
-            
             if (type === 'short') q.correctText = document.getElementById('m-short-answers').value.split(',').map(v => v.trim()).filter(Boolean);
             else if (type === 'order') { q.options = [0, 1, 2, 3].map(i => document.getElementById('m-order-' + i).value.trim()).filter(Boolean); q.order = [...q.options]; }
             else if (type === 'emoji') { q.options = EMOJI_OPTIONS; q.noScore = true; }
@@ -195,25 +170,23 @@
                 if (type === 'multi') q.correct = Array.from(document.querySelectorAll('input[name="m-correct"]:checked')).map(el => parseInt(el.value)); 
                 else q.correct = parseInt(document.querySelector('input[name="m-correct"]:checked')?.value || 0); 
             }
-            
             if (editQuestionIndex >= 0) questions[editQuestionIndex] = q; else questions.push(q);
             questions.sort((a, b) => a.time - b.time); renderEditorQuestions(); document.getElementById('modal-q').classList.add('hidden');
         };
 
         window.renderEditorQuestions = () => {
             const list = document.getElementById('q-list');
-            list.innerHTML = questions.map((q, i) => `<div class="p-4 bg-white/60 backdrop-blur border border-slate-200/50 rounded-2xl flex items-center justify-between mb-2 shadow-sm hover:shadow transition-all"><span class="font-mono text-indigo-600 font-black text-sm px-2 py-1 bg-indigo-50 rounded-lg">${formatTime(q.time)}</span><span class="text-sm font-bold truncate mx-3 flex-1 text-slate-700 text-left">${q.text}</span><button onclick="editQ(${i})" class="p-2 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"><i data-lucide="pencil" class="w-4 h-4"></i></button></div>`).join('');
+            list.innerHTML = questions.map((q, i) => `<div class="p-4 bg-white/60 backdrop-blur border border-slate-200/50 rounded-2xl flex items-center justify-between mb-2 shadow-sm hover:shadow transition-all"><span class="font-mono text-indigo-600 font-black text-sm px-2 py-1 bg-indigo-50 rounded-lg">${formatTime(q.time)}</span><span class="text-sm font-bold truncate mx-3 flex-1 text-slate-700 text-left">${q.text}</span><button onclick="editQ(${i})" class="p-2 text-indigo-400 hover:text-indigo-600 rounded-xl transition-all"><i data-lucide="pencil" class="w-4 h-4"></i></button></div>`).join('');
             lucide.createIcons();
         };
 
         window.editQ = (i) => { editQuestionIndex = i; const q = questions[i]; document.getElementById('m-text').value = q.text; document.getElementById('m-type').value = q.type; document.getElementById('m-time-limit').value = q.timeLimit || ''; renderQuestionEditorFields(); document.getElementById('modal-q').classList.remove('hidden'); };
-        
+
         window.exportQuiz = () => { 
             if (!player) return alert("Заредете видео първо!"); 
             const quizData = { v: player.getVideoData().video_id, q: questions };
-            const code = btoa(unescape(encodeURIComponent(JSON.stringify(quizData)))); 
-            lastExportedCode = code;
-            document.getElementById('export-textarea').value = code; 
+            lastExportedCode = btoa(unescape(encodeURIComponent(JSON.stringify(quizData)))); 
+            document.getElementById('export-textarea').value = lastExportedCode; 
             document.getElementById('modal-export').classList.remove('hidden'); 
         };
 
@@ -227,38 +200,7 @@
             setTimeout(() => { btn.innerHTML = '<i data-lucide="copy" class="w-4 h-4"></i> КОПИРАЙ КОД'; lucide.createIcons(); }, 2000);
         };
 
-        window.downloadQuizFile = () => {
-            if (!lastExportedCode) return;
-            const blob = new Blob([lastExportedCode], { type: 'text/plain' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-            a.href = url;
-            a.download = `quiz-${timestamp}.txt`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        };
-
-        window.deleteIndividualResult = async (resId) => {
-            if (!confirm("Наистина ли искате да изтриете този резултат?")) return;
-            try {
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'individual_results', resId);
-                await deleteDoc(docRef);
-            } catch (e) { console.error("Error deleting:", e); }
-        };
-
-        window.clearAllIndividualResults = async () => {
-            if (!confirm("ВНИМАНИЕ: Това ще изтрие абсолютно всички индивидуални резултати завинаги! Сигурни ли сте?")) return;
-            try {
-                const qRef = collection(db, 'artifacts', appId, 'public', 'data', 'individual_results');
-                const snap = await getDocs(qRef);
-                const promises = snap.docs.map(d => deleteDoc(d.ref));
-                await Promise.all(promises);
-            } catch (e) { console.error("Error clearing results:", e); }
-        };
-
+        // --- SOLVE LOGIC ---
         window.startIndividual = () => { 
             studentNameValue = document.getElementById('ind-student-name').value.trim(); 
             const code = document.getElementById('ind-quiz-code').value.trim(); 
@@ -268,10 +210,7 @@
                 quizHash = code.substring(0, 8); 
                 isSenMode = document.getElementById('ind-sen-toggle').checked;
                 switchScreen('solve'); 
-                scoreCount = 0; 
-                currentQIndex = -1; 
-                studentResponses = []; 
-                indQuizFinished = false; 
+                scoreCount = 0; currentQIndex = -1; studentResponses = []; indQuizFinished = false; 
                 document.getElementById('solve-progress').innerText = `0 / ${currentQuiz.q.length}`;
                 document.body.classList.toggle('sen-active', isSenMode);
                 initSolvePlayer(); 
@@ -280,16 +219,11 @@
 
         function initSolvePlayer() {
             if (!window.YT || !window.YT.Player) return setTimeout(initSolvePlayer, 500);
-            solvePlayer = new YT.Player('solve-player', { videoId: currentQuiz.v, playerVars: { 'autoplay': 1, 'controls': 1, 'origin': window.location.origin }, events: { 'onStateChange': (e) => { if (e.data === YT.PlayerState.PLAYING) { const monitor = setInterval(() => { if (!solvePlayer || !solvePlayer.getCurrentTime) return clearInterval(monitor); 
-                const cur = Math.floor(solvePlayer.getCurrentTime()); 
-                const nextQIdx = currentQuiz.q.findIndex((q, i) => cur >= q.time && i > currentQIndex); 
-                if (nextQIdx !== -1) { currentQIndex = nextQIdx; triggerIndQuestion(currentQuiz.q[nextQIdx]); } 
-                if (solvePlayer.getCurrentTime() >= solvePlayer.getDuration() - 1) { clearInterval(monitor); finishIndQuiz(); } }, 500); } } } });
+            solvePlayer = new YT.Player('solve-player', { videoId: currentQuiz.v, playerVars: { 'autoplay': 1, 'controls': 1, 'origin': window.location.origin }, events: { 'onStateChange': (e) => { if (e.data === YT.PlayerState.PLAYING) { const monitor = setInterval(() => { if (!solvePlayer || !solvePlayer.getCurrentTime) return clearInterval(monitor); const cur = Math.floor(solvePlayer.getCurrentTime()); const nextQIdx = currentQuiz.q.findIndex((q, i) => cur >= q.time && i > currentQIndex); if (nextQIdx !== -1) { currentQIndex = nextQIdx; triggerIndQuestion(currentQuiz.q[nextQIdx]); } if (solvePlayer.getCurrentTime() >= solvePlayer.getDuration() - 1) { clearInterval(monitor); finishIndQuiz(); } }, 500); } } } });
         }
 
         function triggerIndQuestion(q) { 
-            solvePlayer.pauseVideo(); 
-            indQuestionLocked = false; 
+            solvePlayer.pauseVideo(); indQuestionLocked = false; 
             document.getElementById('ind-side-q-text').innerText = q.text; 
             const container = document.getElementById('ind-side-options'); 
             container.innerHTML = ''; 
@@ -297,27 +231,21 @@
             if (isSenMode) speakText(q.text);
             if (!isSenMode) startTimer(q.timeLimit, 'ind'); 
             else document.getElementById('ind-side-timer').classList.add('hidden');
-            if (q.type === 'short') {
-                container.innerHTML = `<input type="text" id="ind-short" placeholder="Твоят отговор..." class="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl mb-5 font-bold outline-none focus:border-indigo-500 transition-all"><button onclick="submitIndShort()" class="w-full p-5 bg-indigo-600 text-white rounded-3xl font-black uppercase text-xs tracking-[0.2em] shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all">Изпрати</button>`;
-            } else if (q.type === 'order') { 
-                indOrderState = shuffleArray([...q.options]); 
-                container.innerHTML = `<div id="ind-order-box" class="space-y-3 mb-6"></div><button onclick="submitIndOrder()" class="w-full p-5 bg-indigo-600 text-white rounded-3xl font-black uppercase text-xs tracking-[0.2em] shadow-xl shadow-indigo-100">Готово</button>`; 
-                renderOrderList('ind-order-box', indOrderState); 
-            } else {
-                container.innerHTML = q.options.map((o, i) => `<button onclick="submitInd(${i})" class="w-full p-4 text-left bg-white border-2 border-slate-50 rounded-2xl mb-3 font-bold hover:border-indigo-500 hover:bg-indigo-50/50 text-sm transition-all shadow-sm">${o}</button>`).join(''); 
-            }
+            
+            if (q.type === 'short') { container.innerHTML = `<input type="text" id="ind-short" placeholder="Твоят отговор..." class="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl mb-5 font-bold outline-none"><button onclick="submitIndShort()" class="w-full p-5 bg-indigo-600 text-white rounded-3xl font-black uppercase text-xs">Изпрати</button>`; }
+            else if (q.type === 'order') { indOrderState = shuffleArray([...q.options]); container.innerHTML = `<div id="ind-order-box" class="space-y-3 mb-6"></div><button onclick="submitIndOrder()" class="w-full p-5 bg-indigo-600 text-white rounded-3xl font-black uppercase text-xs">Готово</button>`; renderOrderList('ind-order-box', indOrderState); }
+            else { container.innerHTML = q.options.map((o, i) => `<button onclick="submitInd(${i})" class="w-full p-4 text-left bg-white border-2 border-slate-50 rounded-2xl mb-3 font-bold hover:border-indigo-500 hover:bg-indigo-50/50 transition-all text-sm">${o}</button>`).join(''); }
             lucide.createIcons();
         }
 
         async function finishIndQuiz() { 
-            if (indQuizFinished) return; 
-            indQuizFinished = true;
+            if (indQuizFinished) return; indQuizFinished = true;
             const total = currentQuiz.q.filter(q => !q.noScore).length; 
-            if (ensureFirebase('Запис на резултат')) { 
+            if (ensureFirebase('Запис')) { 
                 try {
                     const resRef = doc(collection(db, 'artifacts', appId, 'public', 'data', 'individual_results')); 
                     await setDoc(resRef, { studentName: studentNameValue, score: scoreCount, total, quizHash, responses: studentResponses, timestamp: serverTimestamp() }); 
-                } catch(e) { console.error("Error saving results:", e); }
+                } catch(e) {}
             } 
             switchScreen('finish'); 
             document.getElementById('res-score').innerText = `${scoreCount} / ${total}`; 
@@ -330,44 +258,42 @@
         window.submitIndOrder = () => { if (!indQuestionLocked) completeIndAnswer(currentQuiz.q[currentQIndex].order.every((v, i) => v === indOrderState[i])); };
         window.submitInd = (idx) => { if (!indQuestionLocked) completeIndAnswer(currentQuiz.q[currentQIndex].correct === idx); };
         function completeIndAnswer(isCorrect) { indQuestionLocked = true; clearQuestionTimers('ind'); const q = currentQuiz.q[currentQIndex]; if (isCorrect) scoreCount++; studentResponses.push({ text: q.text, correct: isCorrect }); document.getElementById('ind-side-panel').classList.add('translate-x-full'); document.getElementById('solve-progress').innerText = `${currentQIndex + 1} / ${currentQuiz.q.length}`; setTimeout(() => { if (solvePlayer) solvePlayer.playVideo(); }, 500); }
-        window.renderOrderList = (id, items) => { const container = document.getElementById(id); container.innerHTML = items.map((it, i) => `<div class="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-2xl shadow-sm"><span class="font-bold text-sm text-slate-700">${it}</span><div class="flex gap-1"><button onclick="moveIndMove(${i}, -1)" class="p-2 bg-slate-50 hover:bg-indigo-50 rounded-xl text-indigo-500 transition-all"><i data-lucide="chevron-up" class="w-4 h-4"></i></button><button onclick="moveIndMove(${i}, 1)" class="p-2 bg-slate-50 hover:bg-indigo-50 rounded-xl text-indigo-500 transition-all"><i data-lucide="chevron-down" class="w-4 h-4"></i></button></div></div>`).join(''); lucide.createIcons(); };
         window.moveIndMove = (i, d) => { const target = i + d; if (target < 0 || target >= indOrderState.length) return; [indOrderState[i], indOrderState[target]] = [indOrderState[target], indOrderState[i]]; renderOrderList('ind-order-box', indOrderState); };
+        window.renderOrderList = (id, items) => { const container = document.getElementById(id); container.innerHTML = items.map((it, i) => `<div class="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-2xl shadow-sm"><span class="font-bold text-sm text-slate-700">${it}</span><div class="flex gap-1"><button onclick="moveIndMove(${i}, -1)" class="p-2 bg-slate-50 hover:bg-indigo-50 rounded-xl text-indigo-500 transition-all"><i data-lucide="chevron-up" class="w-4 h-4"></i></button><button onclick="moveIndMove(${i}, 1)" class="p-2 bg-slate-50 hover:bg-indigo-50 rounded-xl text-indigo-500 transition-all"><i data-lucide="chevron-down" class="w-4 h-4"></i></button></div></div>`).join(''); lucide.createIcons(); };
         window.selectAvatar = (el, em) => { document.querySelectorAll('.avatar-option').forEach(o => o.classList.remove('selected')); el.classList.add('selected'); selectedEmoji = em; };
         window.renderQuestionEditorFields = () => { 
-            const type = document.getElementById('m-type').value; 
-            const container = document.getElementById('m-opts'); 
-            container.innerHTML = ''; 
-            if (type === 'truefalse' || type === 'yesno') { 
-                const labels = type === 'yesno' ? ['Да', 'Не'] : ['Вярно', 'Грешно']; 
-                container.innerHTML = labels.map((l, i) => `<label class="flex items-center gap-3 p-4 bg-slate-50/50 border-2 border-slate-100 rounded-2xl cursor-pointer hover:bg-white hover:border-indigo-200 transition-all"><input type="radio" name="m-correct" value="${i}" ${i === 0 ? 'checked' : ''} class="w-5 h-5 text-indigo-600"><span class="font-black text-sm uppercase text-slate-600 tracking-widest">${l}</span></label>`).join(''); 
-            } else if (type === 'order') {
-                container.innerHTML = [0, 1, 2, 3].map(i => `<input type="text" id="m-order-${i}" placeholder="Елемент ${i+1}" class="w-full px-5 py-3 bg-slate-50 border-2 border-slate-50 rounded-2xl mb-2 text-sm font-bold outline-none focus:border-indigo-500 focus:bg-white transition-all">`).join(''); 
-            } else if (type === 'short') {
-                container.innerHTML = `<input type="text" id="m-short-answers" placeholder="напр: ДНК, DNA" class="w-full px-5 py-3 bg-slate-50 border-2 border-slate-50 rounded-2xl text-sm font-bold outline-none focus:border-indigo-500 focus:bg-white transition-all">`; 
-            } else if (type === 'emoji') {
-                container.innerHTML = `<p class="text-[11px] text-slate-400 italic">Ученикът ще избере емоция като обратна връзка.</p>`; 
-            } else {
-                container.innerHTML = [0, 1, 2].map(i => `<div class="flex items-center gap-3 mb-3"><input type="${type === 'multi' ? 'checkbox' : 'radio'}" name="m-correct" value="${i}" ${i === 0 ? 'checked' : ''} class="w-5 h-5 text-indigo-600"><input type="text" id="m-opt-${i}" placeholder="Опция ${i+1}" class="flex-1 px-5 py-3 bg-slate-50 border-2 border-slate-50 rounded-2xl text-sm font-bold outline-none focus:border-indigo-500 focus:bg-white transition-all"></div>`).join(''); 
-            }
+            const type = document.getElementById('m-type').value; const container = document.getElementById('m-opts'); container.innerHTML = ''; 
+            if (type === 'truefalse' || type === 'yesno') { const labels = type === 'yesno' ? ['Да', 'Не'] : ['Вярно', 'Грешно']; container.innerHTML = labels.map((l, i) => `<label class="flex items-center gap-3 p-4 bg-slate-50/50 border-2 border-slate-100 rounded-2xl cursor-pointer hover:bg-white hover:border-indigo-200 transition-all"><input type="radio" name="m-correct" value="${i}" ${i === 0 ? 'checked' : ''} class="w-5 h-5 text-indigo-600"><span class="font-black text-sm uppercase text-slate-600 tracking-widest">${l}</span></label>`).join(''); } 
+            else if (type === 'order') { container.innerHTML = [0, 1, 2, 3].map(i => `<input type="text" id="m-order-${i}" placeholder="Елемент ${i+1}" class="w-full px-5 py-3 bg-slate-50 border-2 border-slate-50 rounded-2xl mb-2 text-sm font-bold">`).join(''); } 
+            else if (type === 'short') { container.innerHTML = `<input type="text" id="m-short-answers" placeholder="напр: ДНК, DNA" class="w-full px-5 py-3 bg-slate-50 border-2 border-slate-50 rounded-2xl text-sm font-bold">`; } 
+            else if (type === 'emoji') { container.innerHTML = `<p class="text-[11px] text-slate-400 italic">Ученикът ще избере емоция.</p>`; } 
+            else { container.innerHTML = [0, 1, 2].map(i => `<div class="flex items-center gap-3 mb-3"><input type="${type === 'multi' ? 'checkbox' : 'radio'}" name="m-correct" value="${i}" ${i === 0 ? 'checked' : ''} class="w-5 h-5 text-indigo-600"><input type="text" id="m-opt-${i}" placeholder="Опция ${i+1}" class="flex-1 px-5 py-3 bg-slate-50 border-2 border-slate-50 rounded-2xl text-sm font-bold"></div>`).join(''); }
         };
         window.openQModal = () => { editQuestionIndex = -1; document.getElementById('m-text').value = ''; document.getElementById('m-type').value = 'single'; document.getElementById('m-time-limit').value = ''; document.getElementById('m-time').innerText = formatTime(player.getCurrentTime()); renderQuestionEditorFields(); document.getElementById('modal-q').classList.remove('hidden'); };
 
         window.showReport = (uId, type) => {
             const modal = document.getElementById('modal-student-report');
             const body = document.getElementById('report-body');
-            let data = null;
-            if (type === 'live') data = window.currentParticipantsData?.find(p => p.id === uId);
-            else data = window.indParticipantsData?.find(p => p.id === uId);
-
-            if (!data || !data.responses) {
-                body.innerHTML = '<p class="text-center py-12 text-slate-400 font-bold uppercase tracking-widest text-[10px]">Липсват детайлни отговори.</p>';
-            } else {
+            let data = type === 'live' ? window.currentParticipantsData?.find(p => p.id === uId) : window.indParticipantsData?.find(p => p.id === uId);
+            if (!data || !data.responses) body.innerHTML = '<p class="text-center py-12 text-slate-400 font-bold uppercase tracking-widest text-[10px]">Няма детайли.</p>';
+            else {
                 document.getElementById('report-student-name').innerText = data.name || data.studentName;
-                body.innerHTML = `<div class="space-y-4">${data.responses.map((resp, i) => `<div class="flex items-center gap-5 p-5 rounded-[2rem] border-2 ${resp.correct ? 'bg-emerald-50/50 border-emerald-100' : 'bg-rose-50/50 border-rose-100'} transition-all hover:scale-[1.02]"><div class="w-10 h-10 rounded-full flex items-center justify-center text-white shadow-lg ${resp.correct ? 'bg-emerald-500 shadow-emerald-200' : 'bg-rose-500 shadow-rose-200'}"><i data-lucide="${resp.correct ? 'check' : 'x'}" class="w-5 h-5"></i></div><div class="flex-1"><p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Въпрос ${i+1}</p><p class="text-sm font-black text-slate-800 leading-tight">${resp.text}</p></div><div class="text-[10px] font-black ${resp.correct ? 'text-emerald-600' : 'text-rose-600'} uppercase tracking-widest">${resp.correct ? 'Верен' : 'Грешен'}</div></div>`).join('')}</div>`;
+                body.innerHTML = `<div class="space-y-4">${data.responses.map((resp, i) => `<div class="flex items-center gap-5 p-5 rounded-[2rem] border-2 ${resp.correct ? 'bg-emerald-50/50 border-emerald-100' : 'bg-rose-50/50 border-rose-100'}"><div class="w-10 h-10 rounded-full flex items-center justify-center text-white ${resp.correct ? 'bg-emerald-500' : 'bg-rose-500'}"><i data-lucide="${resp.correct ? 'check' : 'x'}" class="w-5 h-5"></i></div><div class="flex-1"><p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Въпрос ${i+1}</p><p class="text-sm font-black text-slate-800 leading-tight">${resp.text}</p></div><div class="text-[10px] font-black ${resp.correct ? 'text-emerald-600' : 'text-rose-600'} uppercase tracking-widest">${resp.correct ? 'Верен' : 'Грешен'}</div></div>`).join('')}</div>`;
             }
-            modal.classList.remove('hidden'); modal.classList.add('flex');
-            lucide.createIcons();
+            modal.classList.remove('hidden'); modal.classList.add('flex'); lucide.createIcons();
         };
+
+        window.downloadCSV = (type) => {
+            let data = type === 'live' ? window.currentParticipantsData : window.indParticipantsData;
+            if (!data || data.length === 0) return alert("Няма данни.");
+            let csv = "Име,Резултат,Общо,Дата/Час,Урок\n";
+            data.forEach(item => { csv += `"${item.name || item.studentName}",${item.score},${item.total || 0},"${formatDateTime(item.timestamp)}","${item.quizHash || sessionID}"\n`; });
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href = url; a.download = `results-${type}.csv`; a.click();
+        };
+
+        window.deleteIndividualResult = async (resId) => { if (confirm("Изтриване?")) { try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'individual_results', resId)); } catch (e) {} } };
 
     </script>
 
@@ -377,7 +303,7 @@
         body.sen-active { background: #fff; }
         body.sen-active #ind-side-q-text { font-size: 2.5rem !important; color: #000; line-height: 1.2; }
         body.sen-active button { border-width: 3px !important; font-size: 1.25rem !important; }
-        .video-container { position: relative; padding-bottom: 56.25%; height: 0; background: #000; border-radius: 2.5rem; overflow: hidden; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.4); border: 8px solid rgba(255,255,255,0.1); }
+        .video-container { position: relative; padding-bottom: 56.25%; height: 0; background: #000; border-radius: 2.5rem; overflow: hidden; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.4); }
         .video-container iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none; }
         .custom-card { background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(241, 245, 249, 0.8); border-radius: 2.5rem; transition: all 0.3s ease; position: relative; }
         .custom-card:hover { transform: translateY(-4px); box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.05); }
@@ -385,11 +311,9 @@
         .avatar-option.selected { border-color: #4f46e5; background: #eef2ff; transform: scale(1.15); }
         .animate-pop { animation: pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
         @keyframes pop { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-        .results-table th { background: #f8fafc; color: #94a3b8; font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.15em; padding: 16px 24px; border-bottom: 1px solid #f1f5f9; }
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        .results-table th { background: #f8fafc; color: #94a3b8; font-size: 10px; font-weight: 900; text-transform: uppercase; padding: 16px 24px; border-bottom: 1px solid #f1f5f9; }
         .btn-primary { background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%); color: white; box-shadow: 0 10px 15px -3px rgba(79, 70, 229, 0.3); }
-        .foreground-icon { position: absolute; top: -2.5rem; left: 2.5rem; z-index: 20; transition: transform 0.3s ease; }
+        .foreground-icon { position: absolute; top: -2.5rem; left: 2.5rem; z-index: 20; }
         .switch { position: relative; display: inline-block; width: 44px; height: 24px; }
         .switch input { opacity: 0; width: 0; height: 0; }
         .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #cbd5e1; transition: .4s; border-radius: 24px; }
@@ -420,7 +344,6 @@
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-y-20 gap-x-8 text-left mt-10">
-                <!-- Individual -->
                 <div class="custom-card p-10 pt-16 space-y-8 border-b-8 border-slate-900 shadow-xl">
                     <div class="foreground-icon bg-white text-slate-900 w-20 h-20 rounded-[2rem] flex items-center justify-center shadow-2xl border-2 border-slate-50"><i data-lucide="book-open-check" class="w-10 h-10"></i></div>
                     <div class="space-y-4">
@@ -434,63 +357,96 @@
                     <button onclick="startIndividual()" class="w-full py-5 bg-slate-900 text-white rounded-3xl font-black hover:bg-black shadow-xl uppercase text-xs tracking-widest transition-all">ЗАПОЧНИ</button>
                 </div>
 
-                <!-- Live Student Placeholder (Omitted for brevity, kept structure same as source) -->
                 <div class="custom-card p-10 pt-16 space-y-8 border-b-8 border-emerald-500 shadow-xl">
                     <div class="foreground-icon bg-emerald-500 text-white w-20 h-20 rounded-[2rem] flex items-center justify-center shadow-2xl border-2 border-emerald-400"><i data-lucide="users-round" class="w-10 h-10"></i></div>
-                    <div class="space-y-4">
-                        <input type="text" id="live-student-name" placeholder="Твоето име..." class="w-full px-6 py-4 bg-slate-50 border-2 border-transparent rounded-2xl font-bold outline-none">
-                        <input type="text" id="live-pin" placeholder="PIN код..." class="w-full px-6 py-4 bg-slate-50 border-2 border-transparent rounded-2xl font-bold outline-none">
-                        <div class="flex items-center justify-between p-4 bg-emerald-50 rounded-2xl border border-emerald-100">
-                            <span class="text-[10px] font-black text-emerald-700 uppercase tracking-widest flex items-center gap-2"><i data-lucide="accessibility" class="w-4 h-4"></i> СОП Режим</span>
-                            <label class="switch"><input type="checkbox" id="live-sen-toggle"><span class="slider"></span></label>
-                        </div>
+                    <div class="space-y-4 text-center py-10">
+                        <p class="text-slate-400 text-sm font-black uppercase tracking-widest">Ученик на живо</p>
+                        <p class="text-[10px] text-slate-300">Функция в разработка</p>
                     </div>
-                    <button class="w-full py-5 bg-emerald-500 text-white rounded-3xl font-black uppercase text-xs tracking-widest">ВКЛЮЧИ СЕ</button>
+                    <button disabled class="w-full py-5 bg-emerald-200 text-white rounded-3xl font-black uppercase text-xs">ВКЛЮЧИ СЕ</button>
                 </div>
 
-                <!-- Teacher -->
                 <div class="custom-card p-10 pt-16 space-y-8 border-b-8 border-indigo-500 shadow-xl">
                     <div class="foreground-icon bg-gradient-to-br from-indigo-500 to-indigo-700 text-white w-20 h-20 rounded-[2rem] flex items-center justify-center shadow-2xl border-2 border-indigo-300"><i data-lucide="presentation" class="w-10 h-10"></i></div>
                     <div class="space-y-4">
-                        <button onclick="openLiveHost()" class="btn-primary w-full py-6 rounded-[2rem] font-black uppercase text-xs tracking-[0.2em]">ХОСТВАНЕ НА ЖИВО</button>
+                        <button onclick="switchScreen('create')" class="btn-primary w-full py-6 rounded-[2rem] font-black uppercase text-xs tracking-[0.2em]">РЕДАКТОР</button>
                         <button onclick="toggleIndHistory()" class="w-full py-4 bg-white border-2 border-slate-100 text-indigo-600 rounded-[2rem] font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 hover:border-indigo-200 transition-all">
                             <i data-lucide="history" class="w-4 h-4"></i> РЕЗУЛТАТИ
                         </button>
-                        <button onclick="switchScreen('create')" class="w-full py-4 bg-slate-50 text-slate-500 rounded-[2rem] font-black text-[10px] uppercase tracking-widest hover:bg-slate-100 transition-all">РЕДАКТОР</button>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- TEACHER LIVE DASHBOARD (Omitted for brevity as the fix is in the modals/listeners) -->
+        <!-- CREATE SCREEN -->
+        <div id="screen-create" class="hidden space-y-10 animate-pop">
+            <div class="custom-card p-6 flex flex-wrap gap-6 items-center shadow-xl border border-white">
+                <button onclick="switchScreen('welcome')" class="bg-slate-50 p-4 rounded-3xl text-slate-400 hover:text-rose-500 transition-all shadow-sm"><i data-lucide="arrow-left" class="w-6 h-6"></i></button>
+                <div class="flex-1 relative">
+                    <i data-lucide="link" class="absolute left-6 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300"></i>
+                    <input type="text" id="yt-url" placeholder="Постави YouTube линк тук..." class="w-full pl-16 pr-6 py-5 bg-slate-50 border-none rounded-3xl font-bold outline-none ring-2 ring-transparent focus:ring-indigo-500/10 transition-all text-slate-700">
+                </div>
+                <button onclick="loadEditorVideo()" class="btn-primary px-12 py-5 rounded-[2rem] font-black uppercase text-xs tracking-widest">ЗАРЕДИ</button>
+                <button onclick="exportQuiz()" class="bg-slate-900 text-white px-10 py-5 rounded-[2rem] font-black hover:bg-black transition-all uppercase text-xs tracking-widest shadow-xl">ЕКСПОРТ</button>
+            </div>
+            <div id="editor-view" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-10">
+                <div class="lg:col-span-8 space-y-6">
+                    <div class="video-container"><div id="player"></div></div>
+                    <div class="bg-white/80 backdrop-blur p-8 rounded-[3rem] border border-white shadow-2xl flex flex-wrap justify-between items-center gap-6">
+                        <div class="flex flex-col">
+                            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Време</span>
+                            <div class="text-5xl font-mono font-black text-indigo-600 tracking-tighter" id="timer">00:00</div>
+                        </div>
+                        <button onclick="openQModal()" class="bg-rose-500 text-white px-12 py-6 rounded-[2.5rem] font-black shadow-xl uppercase text-xs tracking-[0.2em]">ДОБАВИ ВЪПРОС</button>
+                    </div>
+                </div>
+                <div class="lg:col-span-4 custom-card p-8 h-[600px] overflow-hidden flex flex-col border border-slate-100">
+                    <h3 class="font-black text-[11px] uppercase text-slate-400 tracking-[0.2em] mb-8 border-b pb-6">План на урока</h3>
+                    <div id="q-list" class="flex-1 overflow-y-auto custom-scrollbar pr-2"></div>
+                </div>
+            </div>
+        </div>
 
-        <!-- MODAL IND HISTORY -->
+        <!-- SOLVE SCREEN -->
+        <div id="screen-solve" class="hidden relative h-[90vh] flex overflow-hidden rounded-[3rem] shadow-2xl bg-black border-4 border-slate-900 animate-pop">
+            <div class="flex-1 relative">
+                <div id="solve-player" class="w-full h-full"></div>
+                <div class="absolute bottom-10 left-10 bg-indigo-600/90 backdrop-blur-lg px-8 py-3 rounded-full text-white text-[10px] font-black uppercase tracking-[0.2em] shadow-2xl">
+                    Напредък: <span id="solve-progress">0 / 0</span>
+                </div>
+                <button onclick="location.reload()" class="absolute top-10 left-10 p-4 bg-white/10 hover:bg-white/30 rounded-full text-white backdrop-blur transition-all"><i data-lucide="arrow-left" class="w-6 h-6"></i></button>
+            </div>
+            <div id="ind-side-panel" class="w-[450px] h-full bg-white transition-transform duration-700 translate-x-full flex flex-col p-12 z-50 border-l-4 border-slate-900/5 shadow-[-50px_0_100px_rgba(0,0,0,0.1)]">
+                <div class="mb-6 flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div id="ind-timer-dot" class="w-3 h-3 rounded-full bg-rose-500 animate-pulse shadow-lg shadow-rose-200"></div>
+                        <span id="ind-side-timer" class="text-[11px] font-black uppercase text-rose-500 tracking-widest">ОСТАВАТ: --s</span>
+                    </div>
+                    <button onclick="speakText(document.getElementById('ind-side-q-text').innerText)" class="p-3 bg-indigo-100 text-indigo-600 rounded-2xl hover:bg-indigo-600 hover:text-white transition-all"><i data-lucide="volume-2" class="w-5 h-5"></i></button>
+                </div>
+                <h3 id="ind-side-q-text" class="text-3xl font-black mb-12 leading-tight text-slate-800 tracking-tight">...</h3>
+                <div id="ind-side-options" class="space-y-4 flex-1 overflow-y-auto custom-scrollbar pr-4"></div>
+            </div>
+        </div>
+
+        <!-- MODALS -->
         <div id="modal-ind-history" class="fixed inset-0 bg-slate-900/80 backdrop-blur-xl hidden items-center justify-center p-6 z-[150]">
             <div class="bg-white w-full max-w-4xl rounded-[3.5rem] p-10 animate-pop flex flex-col max-h-[90vh] shadow-2xl">
                 <div class="flex items-center justify-between mb-10">
-                    <div class="flex items-center gap-4">
-                        <div class="bg-indigo-600 p-4 rounded-3xl text-white shadow-xl shadow-indigo-100"><i data-lucide="history" class="w-8 h-8"></i></div>
-                        <div class="flex flex-col">
-                            <h2 class="text-2xl font-black text-slate-800 tracking-tight uppercase">Индивидуални сесии</h2>
-                            <div class="flex gap-3">
-                                <button onclick="clearAllIndividualResults()" class="text-[9px] font-black text-rose-500 uppercase tracking-widest hover:text-rose-600 transition-all">Изчисти историята</button>
-                                <span class="text-slate-200">|</span>
-                                <button onclick="downloadCSV('ind')" class="text-[9px] font-black text-emerald-600 uppercase tracking-widest hover:text-emerald-700 transition-all flex items-center gap-1"><i data-lucide="download" class="w-2.5 h-2.5"></i> Свали CSV (Excel)</button>
-                            </div>
+                    <div class="flex flex-col">
+                        <h2 class="text-2xl font-black text-slate-800 tracking-tight uppercase">Индивидуални сесии</h2>
+                        <div class="flex gap-3">
+                            <button onclick="clearAllIndividualResults()" class="text-[9px] font-black text-rose-500 uppercase tracking-widest">Изчисти всичко</button>
+                            <span class="text-slate-200">|</span>
+                            <button onclick="downloadCSV('ind')" class="text-[9px] font-black text-emerald-600 uppercase tracking-widest flex items-center gap-1"><i data-lucide="download" class="w-2.5 h-2.5"></i> Свали CSV</button>
                         </div>
                     </div>
-                    <button onclick="toggleIndHistory()" class="p-4 bg-slate-50 hover:bg-slate-100 rounded-full transition-all text-slate-400"><i data-lucide="x" class="w-6 h-6"></i></button>
+                    <button onclick="toggleIndHistory()" class="p-4 bg-slate-50 hover:bg-slate-100 rounded-full text-slate-400"><i data-lucide="x" class="w-6 h-6"></i></button>
                 </div>
                 <div class="flex-1 overflow-y-auto custom-scrollbar pr-4">
                     <table class="w-full text-left">
-                        <thead class="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b">
-                            <tr>
-                                <th class="pb-5 px-4">Ученик</th>
-                                <th class="pb-5 text-center">Точки</th>
-                                <th class="pb-5 text-center">Дата и час</th>
-                                <th class="pb-5 text-center">Действие</th>
-                                <th class="pb-5 text-right pr-4">Хеш</th>
-                            </tr>
+                        <thead class="text-[10px] font-black text-slate-400 uppercase border-b">
+                            <tr><th class="pb-5 px-4">Ученик</th><th class="pb-5 text-center">Точки</th><th class="pb-5 text-center">Дата</th><th class="pb-5 text-center">Действие</th><th class="pb-5 text-right pr-4">Хеш</th></tr>
                         </thead>
                         <tbody id="host-ind-results-body"></tbody>
                     </table>
@@ -498,26 +454,62 @@
             </div>
         </div>
 
-        <!-- MODAL STUDENT REPORT -->
         <div id="modal-student-report" class="fixed inset-0 bg-slate-900/80 backdrop-blur-xl hidden items-center justify-center p-6 z-[200]">
-            <div class="bg-white w-full max-w-2xl rounded-[3.5rem] p-10 animate-pop flex flex-col max-h-[90vh] shadow-2xl">
+            <div class="bg-white w-full max-w-2xl rounded-[3.5rem] p-10 animate-pop flex flex-col max-h-[90vh]">
                 <div class="flex items-center justify-between mb-10">
-                    <div class="flex flex-col">
-                        <span class="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-1">Детайлен преглед</span>
-                        <h2 id="report-student-name" class="text-3xl font-black text-slate-800 tracking-tighter uppercase leading-none">Ученик</h2>
-                    </div>
-                    <button onclick="document.getElementById('modal-student-report').classList.add('hidden')" class="p-4 bg-slate-50 hover:bg-rose-50 rounded-full transition-all text-slate-400 shadow-sm"><i data-lucide="x" class="w-6 h-6"></i></button>
+                    <h2 id="report-student-name" class="text-3xl font-black text-slate-800 tracking-tighter uppercase">Ученик</h2>
+                    <button onclick="document.getElementById('modal-student-report').classList.add('hidden')" class="p-4 bg-slate-50 rounded-full"><i data-lucide="x" class="w-6 h-6"></i></button>
                 </div>
                 <div id="report-body" class="flex-1 overflow-y-auto custom-scrollbar pr-4 space-y-4"></div>
             </div>
         </div>
 
-        <!-- SOLVE & CREATE SCREENS (Omitted to keep file size efficient while retaining core logic) -->
-        <div id="screen-solve" class="hidden relative h-[90vh] flex overflow-hidden rounded-[3rem] shadow-2xl bg-black border-4 border-slate-900 animate-pop">
-            <div class="flex-1 relative"><div id="solve-player" class="w-full h-full"></div><div class="absolute bottom-10 left-10 bg-indigo-600/90 backdrop-blur-lg px-8 py-3 rounded-full text-white text-[10px] font-black uppercase tracking-[0.2em] shadow-2xl">Напредък: <span id="solve-progress">0 / 0</span></div><button onclick="location.reload()" class="absolute top-10 left-10 p-4 bg-white/10 hover:bg-white/30 rounded-full text-white backdrop-blur transition-all"><i data-lucide="arrow-left" class="w-6 h-6"></i></button></div><div id="ind-side-panel" class="w-[450px] h-full bg-white transition-transform duration-700 translate-x-full flex flex-col p-12 z-50 border-l-4 border-slate-900/5 shadow-[-50px_0_100px_rgba(0,0,0,0.1)]"><div class="mb-6 flex items-center justify-between"><div class="flex items-center gap-3"><div id="ind-timer-dot" class="w-3 h-3 rounded-full bg-rose-500 animate-pulse shadow-lg shadow-rose-200"></div><span id="ind-side-timer" class="text-[11px] font-black uppercase text-rose-500 tracking-widest">ОСТАВАТ: --s</span></div><button onclick="speakText(document.getElementById('ind-side-q-text').innerText)" class="p-3 bg-indigo-100 text-indigo-600 rounded-2xl hover:bg-indigo-600 hover:text-white transition-all"><i data-lucide="volume-2" class="w-5 h-5"></i></button></div><h3 id="ind-side-q-text" class="text-3xl font-black mb-12 leading-tight text-slate-800 tracking-tight">...</h3><div id="ind-side-options" class="space-y-4 flex-1 overflow-y-auto custom-scrollbar pr-4"></div></div>
+        <div id="screen-finish" class="hidden py-32 text-center space-y-12 animate-pop px-4">
+            <div class="relative inline-block">
+                <div class="bg-yellow-400 w-36 h-36 rounded-full flex items-center justify-center mx-auto shadow-2xl text-white border-[12px] border-white">
+                    <i data-lucide="trophy" class="w-16 h-16"></i>
+                </div>
+            </div>
+            <h2 class="text-5xl font-black uppercase text-slate-900 tracking-tighter">ТВОЯТ РЕЗУЛТАТ</h2>
+            <div class="text-[10rem] font-black text-indigo-600 leading-none" id="res-score">...</div>
+            <button onclick="location.reload()" class="px-20 py-6 bg-slate-900 text-white rounded-[2.5rem] font-black uppercase text-xs tracking-[0.2em]">Към началото</button>
         </div>
 
-        <div id="screen-finish" class="hidden py-32 text-center space-y-12 animate-pop px-4"><div class="relative inline-block"><div class="bg-yellow-400 w-36 h-36 rounded-full flex items-center justify-center mx-auto shadow-2xl text-white animate-bounce border-[12px] border-white"><i data-lucide="trophy" class="w-16 h-16"></i></div></div><div class="space-y-3"><h2 class="text-5xl font-black uppercase text-slate-900 tracking-tighter">ТВОЯТ РЕЗУЛТАТ</h2><div class="text-[10rem] font-black text-indigo-600 leading-none drop-shadow-2xl select-none" id="res-score">...</div></div><button onclick="location.reload()" class="px-20 py-6 bg-slate-900 text-white rounded-[2.5rem] font-black shadow-2xl uppercase text-xs tracking-[0.2em] hover:bg-black transition-all">Към началото</button></div>
+        <div id="modal-q" class="fixed inset-0 bg-slate-900/90 backdrop-blur-2xl hidden items-center justify-center p-6 z-[250]">
+            <div class="bg-white w-full max-w-xl rounded-[3.5rem] p-12 animate-pop shadow-2xl">
+                <h2 class="text-2xl font-black mb-10 text-slate-800 tracking-tight">Въпрос в <span id="m-time" class="text-indigo-600 px-3 py-1 bg-indigo-50 rounded-xl">00:00</span></h2>
+                <div class="space-y-8">
+                    <input type="text" id="m-text" placeholder="Текст на въпроса" class="w-full px-7 py-5 bg-slate-50 border-none rounded-3xl font-bold outline-none focus:ring-4 ring-indigo-500/5 text-slate-700">
+                    <select id="m-type" onchange="renderQuestionEditorFields()" class="w-full px-7 py-5 bg-slate-50 border-none rounded-3xl font-black outline-none cursor-pointer">
+                        <option value="single">Един верен отговор</option>
+                        <option value="multi">Множество верни</option>
+                        <option value="truefalse">Вярно / Грешно</option>
+                        <option value="short">Кратък отговор</option>
+                        <option value="order">Подреждане</option>
+                        <option value="emoji">Емоция</option>
+                    </select>
+                    <div id="m-opts" class="max-h-56 overflow-y-auto custom-scrollbar px-1 space-y-4"></div>
+                    <input type="number" id="m-time-limit" placeholder="Време в секунди (0 = без)" class="w-full px-7 py-5 bg-slate-50 border-none rounded-3xl font-bold">
+                    <div class="flex gap-4 pt-6">
+                        <button onclick="document.getElementById('modal-q').classList.add('hidden')" class="flex-1 py-6 bg-slate-50 rounded-3xl font-black text-slate-400 uppercase text-xs">Отказ</button>
+                        <button onclick="saveQuestionToEditor()" class="flex-1 py-6 btn-primary rounded-3xl font-black uppercase text-xs">Запази</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="modal-export" class="fixed inset-0 bg-slate-900/90 backdrop-blur-2xl hidden items-center justify-center p-6 z-[250]">
+            <div class="bg-white w-full max-w-xl rounded-[4rem] p-12 text-center animate-pop">
+                <i data-lucide="check-circle-2" class="w-24 h-24 text-emerald-500 mx-auto mb-8"></i>
+                <h2 class="text-3xl font-black mb-4 text-slate-800 uppercase">Експорт</h2>
+                <textarea id="export-textarea" readonly class="w-full h-40 p-8 bg-slate-50 border-none rounded-[2.5rem] text-[10px] font-mono mb-8 outline-none resize-none text-indigo-600"></textarea>
+                <div class="flex flex-col gap-4">
+                    <button id="btn-copy" onclick="copyQuizCode()" class="w-full py-5 bg-indigo-600 text-white rounded-[2rem] font-black uppercase text-[10px] tracking-[0.2em]">КОПИРАЙ КОД</button>
+                    <button onclick="document.getElementById('modal-export').classList.add('hidden')" class="w-full py-5 bg-slate-100 text-slate-400 rounded-[2rem] font-black uppercase text-[10px]">ЗАТВОРИ</button>
+                </div>
+            </div>
+        </div>
+
     </div>
 </body>
 </html>
