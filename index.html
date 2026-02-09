@@ -36,7 +36,6 @@
         let user = null;
         let firebaseReady = false;
 
-        // Вход в системата (Rule 3)
         const initAuth = async () => {
             try {
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -63,17 +62,43 @@
         
         initAuth();
 
-        // Състояние на приложението
         let player, solvePlayer, hostPlayer;
         let questions = [], currentQuiz = null, studentNameValue = "", selectedEmoji = "🐱";
         let sessionID = "", liveActiveQIdx = -1;
         let unsubscribeParticipants = null, unsubscribeSession = null;
         let liveScore = 0, liveTotal = 0, isSenMode = false, studentResponses = [];
-        let scoreCount = 0, currentQIndex = -1; // За соло режим
+        let scoreCount = 0, currentQIndex = -1; 
         let lastFetchedParticipants = [];
         let lastFetchedIndResults = [];
 
-        // --- ГЛОБАЛНИ УТИЛИТИ ---
+        // --- УНИВЕРСАЛНО ДЕШИФРИРАНЕ НА КОД ---
+        window.decodeQuizCode = (code) => {
+            try {
+                // Пречистване на низа от интервали или нови редове
+                const sanitized = code.trim().replace(/\s/g, '');
+                let decoded;
+                try {
+                    // Първи опит: Стандартно UTF-8 Base64
+                    decoded = JSON.parse(decodeURIComponent(escape(atob(sanitized))));
+                } catch (e) {
+                    // Втори опит: Обикновено Base64 (ако не е използван escape/unescape)
+                    decoded = JSON.parse(atob(sanitized));
+                }
+
+                // Поправка на липсващи типове за старите въпроси
+                if (decoded && decoded.q) {
+                    decoded.q = decoded.q.map(q => ({
+                        ...q,
+                        type: q.type || (typeof q.correct === 'boolean' ? 'boolean' : (Array.isArray(q.correct) ? 'multiple' : (isNaN(q.correct) ? 'text' : 'single')))
+                    }));
+                }
+                return decoded;
+            } catch (err) {
+                console.error("Decoding error:", err);
+                return null;
+            }
+        };
+
         window.switchScreen = (name) => {
             document.querySelectorAll('#app > div').forEach(div => div.classList.add('hidden'));
             const target = document.getElementById('screen-' + name);
@@ -104,7 +129,6 @@
             window.speechSynthesis.speak(msg);
         };
 
-        // --- ИЗБОР НА АВАТАР ---
         window.selectAvatar = (el, em) => {
             document.querySelectorAll('.avatar-option').forEach(o => {
                 o.classList.remove('selected', 'border-indigo-600', 'bg-indigo-50', 'ring-4', 'ring-indigo-200');
@@ -113,7 +137,6 @@
             selectedEmoji = em;
         };
 
-        // --- ЕКСПОРТ ---
         window.downloadCSV = (data, filename) => {
             if (data.length === 0) return alert("Няма данни за изтегляне.");
             const headers = Object.keys(data[0]).join(",");
@@ -153,7 +176,6 @@
             window.downloadCSV(dataToExport, `Individual_Results_History.csv`);
         };
 
-        // --- ТИПОВЕ ВЪПРОСИ (РЕДАКТОР) ---
         window.updateModalFields = () => {
             const type = document.getElementById('m-type').value;
             const optsContainer = document.getElementById('m-opts-container');
@@ -208,7 +230,6 @@
             document.getElementById('modal-q').classList.add('hidden');
         };
 
-        // --- ЛОГИКА ЗА ОТГОВАРЯНЕ (УЧЕНИК) ---
         window.renderLiveQuestionUI = (q) => {
             const container = document.getElementById('live-options-client');
             container.innerHTML = '';
@@ -253,7 +274,6 @@
             await updateDoc(pRef, { score: liveScore, total: liveTotal, responses: studentResponses });
         }
 
-        // --- ЛОГИКА ЗА ХОСТВАНЕ ---
         window.openLiveHost = async () => {
             if (!firebaseReady || !user) return;
             sessionID = Math.floor(1000 + Math.random() * 9000).toString();
@@ -323,18 +343,19 @@
             modal.classList.add('flex');
         };
 
-        // --- СОЛО РЕЖИМ ---
         window.startIndividual = () => {
             studentNameValue = document.getElementById('ind-student-name').value.trim();
             const code = document.getElementById('ind-quiz-code').value.trim();
             if (!studentNameValue || !code) return alert("Попълнете име и код.");
-            try {
-                currentQuiz = JSON.parse(decodeURIComponent(escape(atob(code))));
-                isSenMode = document.getElementById('ind-sen-toggle').checked;
-                window.switchScreen('solve');
-                scoreCount = 0; currentQIndex = -1;
-                initSolvePlayer();
-            } catch(e) { alert("Невалиден код на урок."); }
+            
+            const decoded = window.decodeQuizCode(code);
+            if (!decoded) return alert("Невалиден код на урок.");
+            
+            currentQuiz = decoded;
+            isSenMode = document.getElementById('ind-sen-toggle').checked;
+            window.switchScreen('solve');
+            scoreCount = 0; currentQIndex = -1;
+            initSolvePlayer();
         };
 
         function initSolvePlayer() {
@@ -406,17 +427,18 @@
             solvePlayer.playVideo();
         };
 
-        // --- ДРУГИ ---
         window.setupLiveHostQuiz = async () => {
             const code = document.getElementById('host-quiz-code').value.trim();
             if (!code || !firebaseReady) return;
-            try {
-                currentQuiz = JSON.parse(decodeURIComponent(escape(atob(code))));
-                liveActiveQIdx = -1; // Нулиране
-                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sessions', sessionID), { status: 'active', activeQ: -1 });
-                document.getElementById('host-player-area').classList.remove('hidden');
-                initHostPlayer();
-            } catch (e) { alert("Грешен код."); }
+            
+            const decoded = window.decodeQuizCode(code);
+            if (!decoded) return alert("Невалиден код на урок.");
+
+            currentQuiz = decoded;
+            liveActiveQIdx = -1;
+            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sessions', sessionID), { status: 'active', activeQ: -1 });
+            document.getElementById('host-player-area').classList.remove('hidden');
+            initHostPlayer();
         };
 
         window.loadEditorVideo = () => {
@@ -457,10 +479,9 @@
             } else { m.classList.add('hidden'); m.classList.remove('flex'); }
         };
 
-        // YouTube API
-        const tag = document.createElement('script');
-        tag.src = "https://www.youtube.com/iframe_api";
-        document.head.appendChild(tag);
+        const ytTag = document.createElement('script');
+        ytTag.src = "https://www.youtube.com/iframe_api";
+        document.head.appendChild(ytTag);
     </script>
 
     <style>
@@ -618,7 +639,7 @@
             <button onclick="location.reload()" class="btn-primary px-16 py-6 uppercase text-xs tracking-widest">Към началото</button>
         </div>
 
-        <!-- Modals (History, Details, Creator) -->
+        <!-- Modals -->
         <div id="modal-student-details" class="fixed inset-0 bg-slate-900/80 backdrop-blur-xl hidden items-center justify-center p-6 z-[300]">
             <div class="bg-white w-full max-w-md rounded-[3.5rem] p-12 flex flex-col max-h-[80vh] shadow-2xl animate-pop">
                 <div class="flex justify-between items-center mb-10">
@@ -649,7 +670,6 @@
             </div>
         </div>
 
-        <!-- Question Editor -->
         <div id="screen-create" class="hidden space-y-8 animate-pop">
             <div class="bg-white p-8 rounded-[3rem] flex gap-4 items-center border shadow-sm">
                 <button onclick="switchScreen('welcome')" class="p-4 bg-slate-50 rounded-2xl"><i data-lucide="arrow-left" class="w-6 h-6"></i></button>
