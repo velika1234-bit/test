@@ -244,12 +244,21 @@
             });
         };
 
-        // КРАЙ НА СЕСИЯТА ОТ УЧИТЕЛЯ
+        // КРАЙ НА СЕСИЯТА ОТ УЧИТЕЛЯ (АКТУАЛИЗИРАН: Остава на екрана)
         window.endLiveSession = async () => {
             if (!firebaseReady || !sessionID) return;
             const sRef = doc(db, 'artifacts', appId, 'public', 'data', 'sessions', sessionID);
             await updateDoc(sRef, { status: 'finished' });
-            window.switchScreen('welcome');
+            
+            if (hostPlayer) hostPlayer.pauseVideo();
+            
+            // Променяме бутона, за да покажем, че урокът е свършил
+            const btn = document.getElementById('end-lesson-btn');
+            if (btn) {
+                btn.innerText = "Урокът е приключен";
+                btn.classList.replace('bg-rose-500', 'bg-slate-400');
+                btn.disabled = true;
+            }
         };
 
         function updateClassProgress() {
@@ -265,14 +274,14 @@
 
         function renderParticipantsTable(parts) {
             document.getElementById('host-results-body').innerHTML = parts.map(p => `
-                <tr class="border-b ${p.finished ? 'bg-emerald-50/50' : ''}">
+                <tr class="border-b transition-colors ${p.finished ? 'bg-emerald-50/50' : ''}">
                     <td class="py-4 px-6 flex items-center gap-3 font-black text-slate-700 text-sm">
                         <span class="text-xl">${p.avatar || '👤'}</span> <span>${p.name}</span>
                     </td>
                     <td class="py-4 px-6 text-center text-indigo-600 font-black text-lg">${p.score} / ${p.total || 0}</td>
                     <td class="py-4 px-6 text-center">
                         <div class="flex items-center justify-center gap-2">
-                             ${p.finished ? '<span class="text-emerald-500"><i data-lucide="check-circle" class="w-5 h-5"></i></span>' : ''}
+                             ${p.finished ? '<span class="text-emerald-500 animate-bounce"><i data-lucide="check-circle" class="w-5 h-5"></i></span>' : ''}
                              <button onclick="showStudentDetails('${p.id}')" class="p-2 text-slate-400 hover:text-indigo-600 transition-all"><i data-lucide="eye" class="w-4 h-4"></i></button>
                         </div>
                     </td>
@@ -354,6 +363,15 @@
             if (!decoded) return alert("Грешен код на урок.");
             currentQuiz = decoded;
             liveActiveQIdx = -1;
+            
+            // Възстановяваме бутона, ако преди това е бил натиснат "Край"
+            const btn = document.getElementById('end-lesson-btn');
+            if (btn) {
+                btn.innerText = "Край на урока";
+                btn.classList.replace('bg-slate-400', 'bg-rose-500');
+                btn.disabled = false;
+            }
+
             await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sessions', sessionID), { status: 'active', activeQ: -1 });
             document.getElementById('host-player-area').classList.remove('hidden');
             initHostPlayer();
@@ -542,6 +560,7 @@
                 </div>
                 <div class="flex items-center gap-4">
                     <div class="text-indigo-600 font-black text-sm"><i data-lucide="users" class="inline w-4 h-4"></i> <span id="host-participant-count">0</span></div>
+                    <!-- ТОЗИ БУТОН СЛУЖИ ЗА ИЗЛИЗАНЕ -->
                     <button onclick="switchScreen('welcome')" class="p-4 bg-slate-100 text-slate-600 rounded-2xl flex items-center gap-2 font-black text-xs uppercase hover:bg-slate-200 transition-all">
                         <i data-lucide="home" class="w-5 h-5"></i> Начало
                     </button>
@@ -552,7 +571,7 @@
                     <div class="video-container shadow-2xl"><div id="host-video"></div></div>
                     <div class="mt-8 bg-white p-8 rounded-[3rem] flex justify-between items-center border shadow-sm">
                         <div class="text-4xl font-mono font-[900] text-indigo-600" id="host-timer">00:00</div>
-                        <button onclick="endLiveSession()" class="px-10 py-4 bg-rose-500 text-white rounded-[2rem] font-black uppercase text-xs tracking-widest shadow-xl transition-all hover:scale-105 active:scale-95">Край на урока</button>
+                        <button id="end-lesson-btn" onclick="endLiveSession()" class="px-10 py-4 bg-rose-500 text-white rounded-[2rem] font-black uppercase text-xs tracking-widest shadow-xl transition-all hover:scale-105 active:scale-95">Край на урока</button>
                     </div>
                 </div>
                 <div class="lg:col-span-4 bg-white rounded-[3rem] overflow-hidden flex flex-col h-[550px] border shadow-xl">
