@@ -45,6 +45,7 @@
         let scoreCount = 0; 
         let lastAnsweredIdx = -1; 
         let currentVideoId = ""; 
+        let lastFetchedParticipants = []; // ВЪЗСТАНОВЕНО: Списък с ученици за хост режима
         
         let liveScore = 0;
         let currentQIndex = -1; 
@@ -178,15 +179,11 @@
             document.querySelectorAll('#app > div').forEach(div => div.classList.add('hidden'));
             const target = document.getElementById('screen-' + name);
             if (target) target.classList.remove('hidden');
-            
-            // Player cleanup
             if (player) { try { player.destroy(); } catch(e) {} player = null; }
             if (solvePlayer) { try { solvePlayer.destroy(); } catch(e) {} solvePlayer = null; }
             if (hostPlayer) { try { hostPlayer.destroy(); } catch(e) {} hostPlayer = null; }
-            
             window.activeIntervals.forEach(i => clearInterval(i));
             window.activeIntervals = [];
-            
             if (name === 'teacher-dashboard' && currentUser && isTeacher) { 
                 window.loadMyQuizzes(); 
                 window.loadSoloResults(); 
@@ -775,7 +772,6 @@
             const pin = document.getElementById('live-pin').value.trim();
             studentNameValue = document.getElementById('live-student-name').value.trim();
             if (!pin || !studentNameValue) return window.showMessage("Име и ПИН са нужни!", "error");
-            
             try {
                 if (!auth.currentUser) await signInAnonymously(auth);
                 const sessionRef = getSessionRefById(pin);
@@ -1005,7 +1001,7 @@
         <!-- Live Host -->
         <div id="screen-live-host" class="hidden space-y-6 animate-pop">
             <div class="bg-indigo-600 p-8 rounded-[3rem] text-white flex justify-between items-center shadow-xl">
-                <div><span class="text-[10px] font-black uppercase opacity-60">ПИН код:</span><div class="text-8xl font-black tabular-nums tracking-wider" id="host-pin">----</div></div>
+                <div><span class="text-[10px] font-black uppercase opacity-60">ПИН код:</span><div class="text-6xl font-black tabular-nums" id="host-pin">----</div></div>
                 <div class="flex gap-2">
                     <button onclick="window.finishLiveSession()" class="bg-rose-500 px-6 py-4 rounded-xl font-black uppercase text-xs shadow-lg">Край</button>
                     <button onclick="window.switchScreen('teacher-dashboard')" class="bg-white/10 px-6 py-4 rounded-xl font-black uppercase text-xs">Табло</button>
@@ -1017,10 +1013,7 @@
                         <div id="host-video-container" class="video-container border-4 border-white shadow-2xl rounded-[2.5rem]"></div>
                         <div class="mt-4 bg-white p-6 rounded-[2rem] shadow-sm border flex justify-between items-center">
                             <div class="text-5xl font-black text-indigo-600 tabular-nums" id="host-timer">00:00</div>
-                            <div class="flex items-center gap-2">
-                                <span class="text-sm font-black text-slate-400 uppercase">Участници: <span id="host-participant-count" class="text-indigo-600 text-xl">0</span></span>
-                                <button onclick="window.refreshHostParticipants()" class="p-2 bg-slate-100 rounded-full hover:bg-slate-200 transition-all" title="Обнови списъка"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
-                            </div>
+                            <div class="text-sm font-black text-slate-400 uppercase"><span id="host-participant-count" class="text-indigo-600">0</span> Участници</div>
                         </div>
                     </div>
                     <div id="host-setup-area" class="bg-white p-12 rounded-[3rem] text-center border shadow-sm flex flex-col items-center justify-center min-h-[400px]">
@@ -1077,9 +1070,11 @@
             <div class="bg-white w-full max-w-lg rounded-[3rem] p-10 shadow-2xl animate-pop text-center space-y-8">
                 <h2 class="text-xl font-black text-slate-900 uppercase tracking-tighter">Споделяне</h2>
                 <textarea id="share-code-display" readonly class="w-full p-5 bg-slate-50 rounded-2xl border font-mono text-[9px] break-all h-32 outline-none shadow-inner custom-scrollbar text-6xl text-center font-black tracking-[0.2em] text-indigo-600"></textarea>
-                <div class="grid grid-cols-2 gap-4">
-                    <button onclick="window.copyShareCode()" class="bg-indigo-600 text-white py-5 rounded-2xl font-black uppercase shadow-xl text-[10px] hover:bg-indigo-700">Копирай Кода</button>
-                    <button onclick="document.getElementById('modal-share').classList.add('hidden')" class="bg-slate-100 text-slate-500 py-5 rounded-2xl font-black uppercase text-[10px] hover:bg-slate-200">Затвори</button>
+                <div class="flex flex-col sm:flex-row gap-2 justify-center">
+                    <button onclick="window.copyShareCode()" class="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-black uppercase shadow-xl text-[10px] hover:bg-indigo-700 transition-all">Копирай</button>
+                    <!-- НОВ БУТОН ЗА ИЗТЕГЛЯНЕ -->
+                    <button onclick="window.downloadFullLessonCode()" class="flex-1 bg-slate-700 text-white py-4 rounded-2xl font-black uppercase shadow-xl text-[10px] hover:bg-slate-800 transition-all">Изтегли Пълен Архив (.txt)</button>
+                    <button onclick="document.getElementById('modal-share').classList.add('hidden')" class="flex-1 bg-slate-100 text-slate-500 py-4 rounded-2xl font-black uppercase text-[10px] hover:bg-slate-200 transition-all">Затвори</button>
                 </div>
             </div>
         </div>
