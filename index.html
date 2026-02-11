@@ -41,6 +41,7 @@
         let questions = [], currentQuiz = null, studentNameValue = "";
         let sessionID = "", liveActiveQIdx = -1;
         
+        // ВЪЗСТАНОВЕНИ ПРОМЕНЛИВИ:
         let scoreCount = 0; 
         let lastAnsweredIdx = -1; 
         let currentVideoId = ""; 
@@ -56,6 +57,7 @@
         let currentParticipantRef = null;
         let isDiscussionMode = false;
         
+        // Temp storage for quiz data before name entry
         let tempQuizData = null;
         let tempQuizOwnerId = null;
 
@@ -176,11 +178,15 @@
             document.querySelectorAll('#app > div').forEach(div => div.classList.add('hidden'));
             const target = document.getElementById('screen-' + name);
             if (target) target.classList.remove('hidden');
+            
+            // Player cleanup
             if (player) { try { player.destroy(); } catch(e) {} player = null; }
             if (solvePlayer) { try { solvePlayer.destroy(); } catch(e) {} solvePlayer = null; }
             if (hostPlayer) { try { hostPlayer.destroy(); } catch(e) {} hostPlayer = null; }
+            
             window.activeIntervals.forEach(i => clearInterval(i));
             window.activeIntervals = [];
+            
             if (name === 'teacher-dashboard' && currentUser && isTeacher) { 
                 window.loadMyQuizzes(); 
                 window.loadSoloResults(); 
@@ -698,18 +704,41 @@
         // --- HOST LOGIC ---
         window.startHostFromLibrary = async (id) => {
             const quiz = myQuizzes.find(q => q.id === id); if (!quiz) return;
-            currentQuiz = quiz; sessionID = Math.floor(1000 + Math.random() * 8999).toString();
+            
+            // CLEAR PREVIOUS LISTENERS for safety
+            window.unsubscribes.forEach(unsub => unsub());
+            window.unsubscribes = [];
+
+            currentQuiz = quiz; 
+            sessionID = Math.floor(1000 + Math.random() * 8999).toString();
             window.switchScreen('live-host');
             document.getElementById('host-pin').innerText = sessionID;
+            liveActiveQIdx = -1; // Reset question index
+
             const totalPoints = quiz.questions.reduce((a, q) => a + (q.points || 1), 0);
-            await setDoc(getSessionRefById(sessionID), { activeQ: -1, status: 'waiting', hostId: currentUser.uid, pin: sessionID, timestamp: serverTimestamp(), totalPoints });
+            
+            await setDoc(getSessionRefById(sessionID), { 
+                activeQ: -1, status: 'waiting', hostId: currentUser.uid, pin: sessionID, timestamp: serverTimestamp(), totalPoints 
+            });
+
+            // Re-attach participant listener
             const unsub = onSnapshot(getParticipantsCollection(sessionID), (snap) => {
                 lastFetchedParticipants = snap.docs.map(d => ({...d.data(), id: d.id}));
                 document.getElementById('host-participant-count').innerText = lastFetchedParticipants.length;
                 document.getElementById('host-results-body').innerHTML = lastFetchedParticipants.sort((a,b) => b.score - a.score).map((p, i) => `
                     <tr class="border-b"><td class="py-3 px-6 font-black">${i+1}. ${p.avatar || '👤'} ${p.name}</td><td class="py-3 px-6 text-right font-black text-indigo-600">${p.score}</td></tr>`).join('');
             });
-            unsubscribes.push(unsub);
+            window.unsubscribes.push(unsub);
+        };
+        
+        // Manual refresh button for host participants
+        window.refreshHostParticipants = async () => {
+             const snap = await getDocs(getParticipantsCollection(sessionID));
+             lastFetchedParticipants = snap.docs.map(d => ({...d.data(), id: d.id}));
+             document.getElementById('host-participant-count').innerText = lastFetchedParticipants.length;
+             // Force redraw
+             document.getElementById('host-results-body').innerHTML = lastFetchedParticipants.sort((a,b) => b.score - a.score).map((p, i) => `
+                <tr class="border-b"><td class="py-3 px-6 font-black">${i+1}. ${p.avatar || '👤'} ${p.name}</td><td class="py-3 px-6 text-right font-black text-indigo-600">${p.score}</td></tr>`).join('');
         };
 
         window.initHostPlayer = () => {
@@ -727,7 +756,7 @@
                                 await updateDoc(getSessionRefById(sessionID), { activeQ: qIdx, qData: currentQuiz.questions[qIdx], status: 'active' });
                             }
                         }, 1000);
-                        activeIntervals.push(i);
+                        window.activeIntervals.push(i);
                     }
                 }}
             });
@@ -749,31 +778,23 @@
             
             try {
                 if (!auth.currentUser) await signInAnonymously(auth);
-                
-                // 1. Проверка дали потребителят вече е в сесията (RECONNECT LOGIC)
-                const existingRef = getParticipantRef(pin, auth.currentUser.uid);
-                const existingSnap = await getDoc(existingRef);
-                
-                if (existingSnap.exists()) {
-                    currentParticipantRef = existingRef;
-                    const data = existingSnap.data();
-                    liveScore = data.score || 0; // Възстановяваме точките!
-                    window.showMessage("Връщане в сесията...", "info");
-                } else {
-                    // 2. Нова регистрация
-                    const sessionRef = getSessionRefById(pin);
-                    const snap = await getDoc(sessionRef);
-                    if (!snap.exists()) return window.showMessage("Невалиден ПИН!", "error");
-                    
-                    const randomAvatar = AVATARS[Math.floor(Math.random() * AVATARS.length)];
-                    currentParticipantRef = existingRef;
-                    liveScore = 0; // Нулираме само при нов вход
-                    await setDoc(currentParticipantRef, { 
-                        name: studentNameValue, sessionId: pin, avatar: randomAvatar, score: 0, answers: {} 
-                    });
-                }
-                
                 const sessionRef = getSessionRefById(pin);
+                const snap = await getDoc(sessionRef);
+                if (!snap.exists()) return window.showMessage("Невалиден ПИН!", "error");
+                
+                const randomAvatar = AVATARS[Math.floor(Math.random() * AVATARS.length)];
+                document.getElementById('my-avatar-display').innerText = randomAvatar;
+                window.switchScreen('live-client');
+                
+                currentParticipantRef = getParticipantRef(pin, auth.currentUser.uid);
+                await setDoc(currentParticipantRef, { 
+                    name: studentNameValue, sessionId: pin, avatar: randomAvatar, score: 0, answers: {} 
+                });
+                
+                // Ensure write was successful before listening
+                const checkWrite = await getDoc(currentParticipantRef);
+                if(!checkWrite.exists()) throw new Error("Write failed");
+
                 const unsub = onSnapshot(sessionRef, (s) => {
                     const d = s.data(); if (!d) return;
                     if (d.status === 'finished') {
@@ -789,11 +810,7 @@
                         window.renderLiveQuestionUI(d.qData);
                     }
                 });
-                unsubscribes.push(unsub);
-                
-                document.getElementById('my-avatar-display').innerText = (await getDoc(currentParticipantRef)).data()?.avatar || "👤";
-                window.switchScreen('live-client');
-
+                window.unsubscribes.push(unsub);
             } catch (e) { window.showMessage("Грешка при свързване!", "error"); }
         };
 
@@ -988,7 +1005,7 @@
         <!-- Live Host -->
         <div id="screen-live-host" class="hidden space-y-6 animate-pop">
             <div class="bg-indigo-600 p-8 rounded-[3rem] text-white flex justify-between items-center shadow-xl">
-                <div><span class="text-[10px] font-black uppercase opacity-60">ПИН код:</span><div class="text-6xl font-black tabular-nums" id="host-pin">----</div></div>
+                <div><span class="text-[10px] font-black uppercase opacity-60">ПИН код:</span><div class="text-8xl font-black tabular-nums tracking-wider" id="host-pin">----</div></div>
                 <div class="flex gap-2">
                     <button onclick="window.finishLiveSession()" class="bg-rose-500 px-6 py-4 rounded-xl font-black uppercase text-xs shadow-lg">Край</button>
                     <button onclick="window.switchScreen('teacher-dashboard')" class="bg-white/10 px-6 py-4 rounded-xl font-black uppercase text-xs">Табло</button>
@@ -1000,7 +1017,10 @@
                         <div id="host-video-container" class="video-container border-4 border-white shadow-2xl rounded-[2.5rem]"></div>
                         <div class="mt-4 bg-white p-6 rounded-[2rem] shadow-sm border flex justify-between items-center">
                             <div class="text-5xl font-black text-indigo-600 tabular-nums" id="host-timer">00:00</div>
-                            <div class="text-sm font-black text-slate-400 uppercase"><span id="host-participant-count" class="text-indigo-600">0</span> Участници</div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm font-black text-slate-400 uppercase">Участници: <span id="host-participant-count" class="text-indigo-600 text-xl">0</span></span>
+                                <button onclick="window.refreshHostParticipants()" class="p-2 bg-slate-100 rounded-full hover:bg-slate-200 transition-all" title="Обнови списъка"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
+                            </div>
                         </div>
                     </div>
                     <div id="host-setup-area" class="bg-white p-12 rounded-[3rem] text-center border shadow-sm flex flex-col items-center justify-center min-h-[400px]">
@@ -1056,12 +1076,10 @@
         <div id="modal-share" class="fixed inset-0 bg-slate-900/90 backdrop-blur-xl hidden items-center justify-center p-4 z-[2500]">
             <div class="bg-white w-full max-w-lg rounded-[3rem] p-10 shadow-2xl animate-pop text-center space-y-8">
                 <h2 class="text-xl font-black text-slate-900 uppercase tracking-tighter">Споделяне</h2>
-                <textarea id="share-code-display" readonly class="w-full p-5 bg-slate-50 rounded-2xl border font-mono break-all h-32 outline-none shadow-inner custom-scrollbar text-6xl text-center font-black tracking-[0.2em] text-indigo-600"></textarea>
-                <div class="flex flex-col sm:flex-row gap-2 justify-center">
-                    <button onclick="window.copyShareCode()" class="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-black uppercase shadow-xl text-[10px] hover:bg-indigo-700 transition-all">Копирай</button>
-                    <!-- НОВ БУТОН ЗА ИЗТЕГЛЯНЕ -->
-                    <button onclick="window.downloadFullLessonCode()" class="flex-1 bg-slate-700 text-white py-4 rounded-2xl font-black uppercase shadow-xl text-[10px] hover:bg-slate-800 transition-all">Изтегли Пълен Архив (.txt)</button>
-                    <button onclick="document.getElementById('modal-share').classList.add('hidden')" class="flex-1 bg-slate-100 text-slate-500 py-4 rounded-2xl font-black uppercase text-[10px] hover:bg-slate-200 transition-all">Затвори</button>
+                <textarea id="share-code-display" readonly class="w-full p-5 bg-slate-50 rounded-2xl border font-mono text-[9px] break-all h-32 outline-none shadow-inner custom-scrollbar text-6xl text-center font-black tracking-[0.2em] text-indigo-600"></textarea>
+                <div class="grid grid-cols-2 gap-4">
+                    <button onclick="window.copyShareCode()" class="bg-indigo-600 text-white py-5 rounded-2xl font-black uppercase shadow-xl text-[10px] hover:bg-indigo-700">Копирай Кода</button>
+                    <button onclick="document.getElementById('modal-share').classList.add('hidden')" class="bg-slate-100 text-slate-500 py-5 rounded-2xl font-black uppercase text-[10px] hover:bg-slate-200">Затвори</button>
                 </div>
             </div>
         </div>
@@ -1075,23 +1093,6 @@
                     <button onclick="window.confirmStudentName()" class="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black uppercase shadow-xl hover:bg-indigo-700 transition-all">Готово</button>
                     <button onclick="document.getElementById('modal-name').classList.add('hidden')" class="bg-slate-100 text-slate-500 py-5 rounded-2xl font-black uppercase hover:bg-slate-200 transition-all">Отказ</button>
                 </div>
-            </div>
-        </div>
-        
-        <!-- Live Client -->
-        <div id="screen-live-client" class="hidden min-h-[70vh] flex flex-col items-center justify-center animate-pop p-4 text-center">
-            <div id="client-waiting" class="space-y-8">
-                <div class="w-32 h-32 bg-white rounded-[2.5rem] flex items-center justify-center mx-auto text-6xl shadow-2xl animate-bounce" id="my-avatar-display">👤</div>
-                <h2 id="waiting-status-text" class="text-xl sm:text-3xl font-black text-slate-800 uppercase">Изчакай въпрос...</h2>
-            </div>
-            <div id="client-question" class="hidden w-full max-w-2xl bg-white p-8 rounded-[3rem] shadow-2xl">
-                <h3 id="live-q-text-client" class="text-lg sm:text-2xl font-black mb-10 leading-tight">...</h3>
-                <div id="live-options-client" class="grid grid-cols-1 gap-3"></div>
-            </div>
-            <div id="client-finished" class="hidden bg-white p-12 rounded-[3rem] shadow-2xl text-center">
-                <h2 class="text-2xl sm:text-4xl font-black uppercase">Приключи!</h2>
-                <div class="text-7xl font-black text-indigo-600 mt-4 tabular-nums" id="final-score-display">0</div>
-                <button onclick="location.reload()" class="w-full mt-8 py-5 bg-black text-white rounded-2xl font-black uppercase text-sm shadow-xl hover:scale-105 transition-all">КЪМ НАЧАЛОТО</button>
             </div>
         </div>
     </div>
