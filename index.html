@@ -41,11 +41,10 @@
         let questions = [], currentQuiz = null, studentNameValue = "";
         let sessionID = "", liveActiveQIdx = -1;
         
-        // ВЪЗСТАНОВЕНИ ПРОМЕНЛИВИ:
         let scoreCount = 0; 
         let lastAnsweredIdx = -1; 
         let currentVideoId = ""; 
-        let lastFetchedParticipants = []; // ВЪЗСТАНОВЕНО: Списък с ученици за хост режима
+        let lastFetchedParticipants = [];
         
         let liveScore = 0;
         let currentQIndex = -1; 
@@ -58,7 +57,6 @@
         let currentParticipantRef = null;
         let isDiscussionMode = false;
         
-        // Temp storage for quiz data before name entry
         let tempQuizData = null;
         let tempQuizOwnerId = null;
 
@@ -107,7 +105,7 @@
 
         onAuthStateChanged(auth, async (u) => {
             currentUser = u;
-            window.unsubscribes.forEach(unsub => unsub());
+            window.unsubscribes.forEach(unsub => { try { unsub(); } catch(e) {} });
             window.unsubscribes = [];
             
             if (currentUser) {
@@ -179,11 +177,14 @@
             document.querySelectorAll('#app > div').forEach(div => div.classList.add('hidden'));
             const target = document.getElementById('screen-' + name);
             if (target) target.classList.remove('hidden');
+            
             if (player) { try { player.destroy(); } catch(e) {} player = null; }
             if (solvePlayer) { try { solvePlayer.destroy(); } catch(e) {} solvePlayer = null; }
             if (hostPlayer) { try { hostPlayer.destroy(); } catch(e) {} hostPlayer = null; }
+            
             window.activeIntervals.forEach(i => clearInterval(i));
             window.activeIntervals = [];
+            
             if (name === 'teacher-dashboard' && currentUser && isTeacher) { 
                 window.loadMyQuizzes(); 
                 window.loadSoloResults(); 
@@ -246,7 +247,6 @@
             }
         };
 
-        // NEW: Clean Start for New Quiz
         window.createNewQuiz = () => {
              editingQuizId = null;
              editingQuestionIndex = null;
@@ -737,10 +737,19 @@
              document.getElementById('host-results-body').innerHTML = lastFetchedParticipants.sort((a,b) => b.score - a.score).map((p, i) => `
                 <tr class="border-b"><td class="py-3 px-6 font-black">${i+1}. ${p.avatar || '👤'} ${p.name}</td><td class="py-3 px-6 text-right font-black text-indigo-600">${p.score}</td></tr>`).join('');
         };
+        
+        // Added Quit Host Logic
+        window.quitHostSession = async () => {
+            if (confirm("Сигурни ли сте, че искате да затворите сесията?")) {
+                await updateDoc(getSessionRefById(sessionID), { status: 'finished' });
+                window.switchScreen('teacher-dashboard');
+            }
+        };
 
         window.initHostPlayer = () => {
+            // FIX: Removed host-player-area removal logic as it broke the layout in cinema mode
             document.getElementById('host-video-container').innerHTML = '<div id="host-video"></div>';
-            hostPlayer = new YT.Player('host-video', { videoId: currentQuiz.v, width: '100%', height: '100%', playerVars: { 'autoplay': 1 }, 
+            hostPlayer = new YT.Player('host-video', { videoId: currentQuiz.v, width: '100%', height: '100%', playerVars: { 'autoplay': 1, 'controls': 1 }, 
                 events: { 'onStateChange': (e) => {
                     if (e.data === YT.PlayerState.PLAYING) {
                         const i = setInterval(async () => {
@@ -758,7 +767,6 @@
                 }}
             });
             document.getElementById('host-setup-area').classList.add('hidden');
-            document.getElementById('host-player-area').classList.remove('hidden');
         };
 
         window.finishLiveSession = async () => {
@@ -772,6 +780,7 @@
             const pin = document.getElementById('live-pin').value.trim();
             studentNameValue = document.getElementById('live-student-name').value.trim();
             if (!pin || !studentNameValue) return window.showMessage("Име и ПИН са нужни!", "error");
+            
             try {
                 if (!auth.currentUser) await signInAnonymously(auth);
                 const sessionRef = getSessionRefById(pin);
@@ -782,15 +791,15 @@
                 document.getElementById('my-avatar-display').innerText = randomAvatar;
                 window.switchScreen('live-client');
                 
-                currentParticipantRef = getParticipantRef(pin, auth.currentUser.uid);
+                // CRITICAL FIX: Ensure user ID is available
+                const uid = auth.currentUser.uid;
+                currentParticipantRef = getParticipantRef(pin, uid);
+                
+                // Write with merge to prevent overwrite on reconnect
                 await setDoc(currentParticipantRef, { 
                     name: studentNameValue, sessionId: pin, avatar: randomAvatar, score: 0, answers: {} 
-                });
+                }, { merge: true });
                 
-                // Ensure write was successful before listening
-                const checkWrite = await getDoc(currentParticipantRef);
-                if(!checkWrite.exists()) throw new Error("Write failed");
-
                 const unsub = onSnapshot(sessionRef, (s) => {
                     const d = s.data(); if (!d) return;
                     if (d.status === 'finished') {
@@ -807,7 +816,10 @@
                     }
                 });
                 window.unsubscribes.push(unsub);
-            } catch (e) { window.showMessage("Грешка при свързване!", "error"); }
+            } catch (e) { 
+                 console.error(e);
+                 window.showMessage(`Грешка: ${e.code || e.message}`, "error"); 
+            }
         };
 
         window.renderLiveQuestionUI = (q) => {
@@ -999,30 +1011,55 @@
         </div>
 
         <!-- Live Host -->
-        <div id="screen-live-host" class="hidden space-y-6 animate-pop">
-            <div class="bg-indigo-600 p-8 rounded-[3rem] text-white flex justify-between items-center shadow-xl">
-                <div><span class="text-[10px] font-black uppercase opacity-60">ПИН код:</span><div class="text-6xl font-black tabular-nums" id="host-pin">----</div></div>
-                <div class="flex gap-2">
-                    <button onclick="window.finishLiveSession()" class="bg-rose-500 px-6 py-4 rounded-xl font-black uppercase text-xs shadow-lg">Край</button>
-                    <button onclick="window.switchScreen('teacher-dashboard')" class="bg-white/10 px-6 py-4 rounded-xl font-black uppercase text-xs">Табло</button>
+        <div id="screen-live-host" class="hidden h-screen p-4 flex flex-col animate-pop">
+            <div class="bg-indigo-600 p-6 rounded-[2rem] text-white flex justify-between items-center shadow-xl mb-4 shrink-0">
+                <div class="flex items-center gap-8">
+                    <div>
+                        <span class="text-xs font-black uppercase opacity-60 tracking-widest block">ПИН КОД</span>
+                        <span class="text-7xl font-black tabular-nums tracking-wider leading-none" id="host-pin">----</span>
+                    </div>
+                    
+                    <!-- NEW: Timer in header -->
+                    <div class="hidden sm:block bg-indigo-700/50 px-6 py-2 rounded-2xl border border-indigo-500/30">
+                        <span class="text-[10px] font-black uppercase opacity-60 tracking-widest block text-center">Време</span>
+                        <div class="text-3xl font-black tabular-nums leading-none font-mono" id="host-timer">00:00</div>
+                    </div>
+                </div>
+
+                <div class="flex gap-2 items-center">
+                    <span class="text-[10px] font-bold uppercase opacity-80 mr-2" id="host-connection-status">Live</span>
+                    <button onclick="window.refreshHostParticipants()" class="p-4 bg-white/10 rounded-2xl hover:bg-white/20 transition-all text-white" title="Обнови списъка">
+                         <i data-lucide="refresh-cw" class="w-5 h-5"></i>
+                    </button>
+                    <button onclick="window.quitHostSession()" class="bg-white/10 px-8 py-4 rounded-2xl font-black uppercase text-xs hover:bg-white/20 transition-all border border-white/10">ИЗХОД</button>
+                    <button onclick="window.finishLiveSession()" class="bg-rose-500 px-8 py-4 rounded-2xl font-black uppercase text-xs shadow-lg hover:bg-rose-600 transition-all">ПРИКЛЮЧВАНЕ</button>
                 </div>
             </div>
-            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                <div class="lg:col-span-8">
-                    <div id="host-player-area" class="hidden">
-                        <div id="host-video-container" class="video-container border-4 border-white shadow-2xl rounded-[2.5rem]"></div>
-                        <div class="mt-4 bg-white p-6 rounded-[2rem] shadow-sm border flex justify-between items-center">
-                            <div class="text-5xl font-black text-indigo-600 tabular-nums" id="host-timer">00:00</div>
-                            <div class="text-sm font-black text-slate-400 uppercase"><span id="host-participant-count" class="text-indigo-600">0</span> Участници</div>
-                        </div>
-                    </div>
-                    <div id="host-setup-area" class="bg-white p-12 rounded-[3rem] text-center border shadow-sm flex flex-col items-center justify-center min-h-[400px]">
-                        <button onclick="window.initHostPlayer()" class="w-full max-w-sm py-6 bg-indigo-600 text-white rounded-2xl font-black uppercase shadow-xl">Започни Видеото</button>
+
+            <div class="flex-1 grid grid-cols-12 gap-6 overflow-hidden">
+                <!-- VIDEO AREA: 10/12 cols -->
+                <div class="col-span-9 lg:col-span-10 flex flex-col h-full bg-black rounded-[2rem] overflow-hidden shadow-2xl relative border-4 border-slate-900">
+                    <div id="host-video-container" class="absolute inset-0 w-full h-full"></div>
+                    <!-- Controls Overlay -->
+                    <div id="host-setup-area" class="absolute inset-0 flex items-center justify-center bg-slate-900/90 backdrop-blur-sm z-10">
+                        <button onclick="window.initHostPlayer()" class="px-16 py-8 bg-indigo-600 text-white rounded-3xl font-black uppercase text-2xl shadow-2xl hover:scale-105 transition-transform flex items-center gap-4">
+                            <i data-lucide="play" class="w-8 h-8 fill-current"></i>
+                            Започни Видеото
+                        </button>
                     </div>
                 </div>
-                <div class="lg:col-span-4 bg-white rounded-[3rem] flex flex-col h-[500px] border shadow-sm overflow-hidden">
-                    <div class="p-5 border-b font-black uppercase text-[10px] text-slate-500 text-center tracking-widest bg-slate-50">Класиране</div>
-                    <div class="flex-1 overflow-y-auto p-3 custom-scrollbar"><table class="w-full"><tbody id="host-results-body"></tbody></table></div>
+
+                <!-- LEADERBOARD AREA: 2/12 cols -->
+                <div class="col-span-3 lg:col-span-2 flex flex-col h-full bg-white rounded-[2rem] shadow-xl overflow-hidden border border-slate-100">
+                    <div class="p-4 bg-slate-50 border-b border-slate-100 flex flex-col items-center justify-center gap-1">
+                        <span class="text-[9px] font-black uppercase text-slate-400 tracking-widest">Участници</span>
+                        <span id="host-participant-count" class="text-indigo-600 font-black text-2xl">0</span>
+                    </div>
+                    <div class="flex-1 overflow-y-auto p-2 custom-scrollbar">
+                        <table class="w-full text-left">
+                            <tbody id="host-results-body"></tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
