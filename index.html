@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>LessonMaster Live (Test)</title>
+  <title>LessonMaster Live (Test v2)</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body { -webkit-font-smoothing: antialiased; }
@@ -15,6 +15,7 @@
     .opt { border: 2px solid rgb(226 232 240); border-radius: 1rem; padding: 1rem; font-weight: 800; background: white; }
     .opt.selected { border-color: rgb(2 132 199); background: rgb(240 249 255); }
     .disabled { opacity: .6; pointer-events: none; }
+    code { background: rgb(241 245 249); padding: .1rem .25rem; border-radius: .4rem; }
   </style>
 </head>
 
@@ -24,8 +25,8 @@
     <!-- TOP BAR -->
     <header class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
       <div>
-        <div class="text-3xl font-black tracking-tight">LessonMaster Live (Test)</div>
-        <div class="muted font-bold text-sm">Ученици: само интерактивни | Хост: всички слайдове + статистика</div>
+        <div class="text-3xl font-black tracking-tight">LessonMaster Live (Test v2)</div>
+        <div class="muted font-bold text-sm">Lesson отделно от Session • ученици виждат само интерактивните</div>
       </div>
       <div class="flex gap-2 flex-wrap">
         <span id="mode-pill" class="pill">MODE: —</span>
@@ -60,7 +61,7 @@
       <!-- HOST -->
       <div class="card p-6 space-y-4 bg-slate-900 text-white border-0">
         <div class="text-xl font-black">Хост (учител)</div>
-        <div class="text-slate-300 font-bold text-sm">Стартираш сесия и контролираш темпото (Next / Lock / Reveal).</div>
+        <div class="text-slate-300 font-bold text-sm">Стартираш сесия и контролираш темпото (Start / Next / Lock / Reveal).</div>
 
         <div class="space-y-2">
           <label class="text-xs font-black uppercase tracking-widest text-slate-400">Парола (тест)</label>
@@ -73,7 +74,7 @@
         </div>
 
         <div class="text-slate-300 text-xs font-bold">
-          Demo урокът е вграден. После ще го замениш с редактора ти.
+          Demo урокът е вграден. В следващ етап ще го заменим с редактора.
         </div>
       </div>
     </section>
@@ -88,8 +89,11 @@
               PIN: <span id="host-pin" class="text-sky-700">—</span>
             </div>
             <div class="muted font-bold text-sm">
-              QR/линк към учениците:
-              <span id="host-join-link" class="font-black"></span>
+              Join link:
+              <span id="host-join-link" class="font-black break-all"></span>
+            </div>
+            <div class="muted font-bold text-xs">
+              lessonId: <span id="host-lesson-id" class="font-black">—</span>
             </div>
           </div>
 
@@ -205,11 +209,10 @@
   </div>
 
   <script type="module">
-    // Firebase SDK (CDN Modules)
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
     import {
       getFirestore, doc, setDoc, getDoc, updateDoc, serverTimestamp,
-      collection, onSnapshot, getDocs
+      collection, onSnapshot
     } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
     import { getAuth, signInAnonymously, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
@@ -234,10 +237,13 @@
     const db = getFirestore(app);
     const auth = getAuth(app);
 
-    // Firestore paths (matches your "artifacts/appId/public/data" pattern)
+    // Firestore paths (artifacts/appId/public/data)
     const sessionDocRef = (pin) => doc(db, 'artifacts', appId, 'public', 'data', 'sessions', pin);
+    const lessonsDocRef = (lessonId) => doc(db, 'artifacts', appId, 'public', 'data', 'lessons', lessonId);
+
     const participantsColRef = (pin) => collection(db, 'artifacts', appId, 'public', 'data', 'sessions', pin, 'participants');
     const participantDocRef = (pin, uid) => doc(db, 'artifacts', appId, 'public', 'data', 'sessions', pin, 'participants', uid);
+
     const answersColRef = (pin, slideIdx) => collection(db, 'artifacts', appId, 'public', 'data', 'sessions', pin, 'responses', String(slideIdx), 'answers');
     const answerDocRef = (pin, slideIdx, uid) => doc(db, 'artifacts', appId, 'public', 'data', 'sessions', pin, 'responses', String(slideIdx), 'answers', uid);
 
@@ -260,20 +266,39 @@
     // === STATE ===
     let currentUser = null;
     let mode = 'welcome'; // welcome | host | student
-    let hostPin = null;
-    let studentPin = null;
 
-    let hostLesson = null;
+    // Host state
+    let hostPin = null;
+    let hostLessonId = null;
+    let hostLesson = null; // {title, slides}
     let hostActiveSlideIdx = -1;
     let hostPhase = 'waiting';
 
-    let unsub = { session: null, participants: null, answers: null };
+    // Student state
+    let studentPin = null;
+    let studentLessonId = null;
+    let studentLesson = null;
+    let studentActiveSlideIdx = -1;
+    let studentPhase = 'waiting';
+
+    // Cache helpers
+    const lessonCacheKey = (lessonId) => `lm_lesson_cache_${lessonId}`;
+    function cacheLesson(lessonId, lessonObj) {
+      try { localStorage.setItem(lessonCacheKey(lessonId), JSON.stringify(lessonObj)); } catch(e) {}
+    }
+    function getCachedLesson(lessonId) {
+      try {
+        const raw = localStorage.getItem(lessonCacheKey(lessonId));
+        return raw ? JSON.parse(raw) : null;
+      } catch(e) { return null; }
+    }
+
+    let unsub = { session: null, participants: null, answers: null, answerMine: null };
 
     // === UI HELPERS ===
     const $ = (id) => document.getElementById(id);
     const show = (id) => $(id).classList.remove('hidden');
     const hide = (id) => $(id).classList.add('hidden');
-
     const setPill = (id, text) => $(id).textContent = text;
 
     function setMode(nextMode) {
@@ -307,9 +332,8 @@
     }
 
     // === HOST FLOW ===
-    function genPin() {
-      return String(Math.floor(1000 + Math.random() * 9000));
-    }
+    function genPin() { return String(Math.floor(1000 + Math.random() * 9000)); }
+    function genLessonId() { return 'demo-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8); }
 
     async function hostLogin() {
       const pw = $('teacher-pass').value;
@@ -318,20 +342,33 @@
         return;
       }
       await ensureAnonAuth();
-      hostLesson = JSON.parse(localStorage.getItem('lm_demo_lesson') || 'null') || demoLesson;
-      hostPin = genPin();
 
-      // Create session
+      // Demo lesson from localStorage or built-in
+      const localDemo = JSON.parse(localStorage.getItem('lm_demo_lesson') || 'null');
+      hostLesson = localDemo || demoLesson;
+
+      // Upload lesson (once)
+      hostLessonId = genLessonId();
+      await setDoc(lessonsDocRef(hostLessonId), {
+        lessonId: hostLessonId,
+        title: hostLesson.title,
+        slides: hostLesson.slides,
+        createdAt: serverTimestamp()
+      });
+
+      // Create session referencing lessonId
+      hostPin = genPin();
       await setDoc(sessionDocRef(hostPin), {
         pin: hostPin,
         title: hostLesson.title,
-        lesson: hostLesson,              // за тест: качваме целия урок; после ще е lessonId
+        lessonId: hostLessonId,
         activeSlideIdx: -1,
         phase: 'waiting',
         createdAt: serverTimestamp()
       });
 
       $('host-pin').textContent = hostPin;
+      $('host-lesson-id').textContent = hostLessonId;
       const joinLink = `${window.location.origin}${window.location.pathname}?pin=${hostPin}`;
       $('host-join-link').textContent = joinLink;
 
@@ -342,13 +379,13 @@
 
     async function hostStart() {
       if (!hostPin) return;
-      // move to first slide
       hostActiveSlideIdx = 0;
-      hostPhase = isInteractiveSlide(hostLesson.slides[0]) ? 'answering' : 'active';
+      const slide = hostLesson?.slides?.[hostActiveSlideIdx] ?? null;
+      hostPhase = isInteractiveSlide(slide) ? 'answering' : 'active';
+
       await updateDoc(sessionDocRef(hostPin), {
         activeSlideIdx: hostActiveSlideIdx,
-        phase: hostPhase,
-        currentSlide: hostLesson.slides[hostActiveSlideIdx]
+        phase: hostPhase
       });
     }
 
@@ -361,12 +398,12 @@
         return;
       }
       hostActiveSlideIdx = nextIdx;
-      hostPhase = isInteractiveSlide(hostLesson.slides[nextIdx]) ? 'answering' : 'active';
+      const slide = hostLesson?.slides?.[hostActiveSlideIdx] ?? null;
+      hostPhase = isInteractiveSlide(slide) ? 'answering' : 'active';
 
       await updateDoc(sessionDocRef(hostPin), {
         activeSlideIdx: hostActiveSlideIdx,
-        phase: hostPhase,
-        currentSlide: hostLesson.slides[hostActiveSlideIdx]
+        phase: hostPhase
       });
     }
 
@@ -385,47 +422,65 @@
       await updateDoc(sessionDocRef(hostPin), { phase: 'done' });
       cleanupSubs();
       hostPin = null;
+      hostLessonId = null;
+      hostLesson = null;
       setMode('welcome');
     }
 
     function cleanupSubs() {
       Object.values(unsub).forEach(fn => { try { fn && fn(); } catch(e) {} });
-      unsub = { session: null, participants: null, answers: null };
+      unsub = { session: null, participants: null, answers: null, answerMine: null };
+    }
+
+    async function ensureHostLessonLoaded(lessonId) {
+      if (hostLesson && hostLessonId === lessonId) return;
+      const cached = getCachedLesson(lessonId);
+      if (cached) { hostLesson = cached; hostLessonId = lessonId; return; }
+
+      const lSnap = await getDoc(lessonsDocRef(lessonId));
+      const data = lSnap.data();
+      if (data) {
+        hostLesson = { title: data.title, slides: data.slides };
+        hostLessonId = lessonId;
+        cacheLesson(lessonId, hostLesson);
+      }
     }
 
     function attachHostListeners(pin) {
       cleanupSubs();
 
-      // Session snapshot
-      unsub.session = onSnapshot(sessionDocRef(pin), (snap) => {
+      unsub.session = onSnapshot(sessionDocRef(pin), async (snap) => {
         const d = snap.data();
         if (!d) return;
 
-        hostLesson = d.lesson || hostLesson;
+        hostLessonId = d.lessonId || hostLessonId;
         hostActiveSlideIdx = d.activeSlideIdx ?? -1;
         hostPhase = d.phase || 'waiting';
 
+        $('host-lesson-id').textContent = hostLessonId || '—';
+
+        if (hostLessonId) await ensureHostLessonLoaded(hostLessonId);
+
+        const slide = (hostLesson?.slides && hostActiveSlideIdx >= 0) ? hostLesson.slides[hostActiveSlideIdx] : null;
+
         $('host-slide-counter').textContent = hostLesson ? `${Math.max(hostActiveSlideIdx,0)+1} / ${hostLesson.slides.length}` : '—';
-        renderHostSlide(d.currentSlide || null);
+        renderHostSlide(slide);
 
         // answers listener for current slide only (if interactive)
-        const slide = d.currentSlide;
         if (unsub.answers) { unsub.answers(); unsub.answers = null; }
         if (slide && hostActiveSlideIdx >= 0 && isInteractiveSlide(slide)) {
           unsub.answers = onSnapshot(answersColRef(pin, hostActiveSlideIdx), (qsnap) => {
             const answers = qsnap.docs.map(x => ({ id: x.id, ...x.data() }));
-            renderStatsForSlide(slide, answers);
             $('stat-answered').textContent = String(answers.length);
+            renderStatsForSlide(slide, answers);
           });
         } else {
-          // reset stats
           $('stat-answered').textContent = '0';
           $('stat-mcq').innerHTML = `<div class="muted font-bold">—</div>`;
           $('stat-short').innerHTML = `<div class="muted font-bold">—</div>`;
         }
       });
 
-      // Participants snapshot
       unsub.participants = onSnapshot(participantsColRef(pin), (snap) => {
         $('stat-participants').textContent = String(snap.size);
       });
@@ -457,7 +512,7 @@
           const isCorrect = (i === slide.interaction.correct);
           return `
             <div class="flex items-center justify-between">
-              <div class="font-black ${isCorrect ? 'text-emerald-700' : 'text-slate-700'}">${i+1}. ${t}${isCorrect ? ' ✅' : ''}</div>
+              <div class="font-black ${isCorrect ? 'text-emerald-700' : 'text-slate-700'}">${i+1}. ${escapeHtml(t)}${isCorrect ? ' ✅' : ''}</div>
               <div class="font-black">${counts[i] || 0}</div>
             </div>
           `;
@@ -470,7 +525,7 @@
         const preview = answers.slice(0, 10).map(a => {
           const txt = (a.answerText ?? '').toString();
           return `<div class="p-2 rounded-xl bg-slate-50 border border-slate-200">
-            <div class="text-xs font-black uppercase tracking-widest muted">${a.name || a.id}</div>
+            <div class="text-xs font-black uppercase tracking-widest muted">${escapeHtml(a.name || a.id)}</div>
             <div class="font-black">${escapeHtml(txt) || '—'}</div>
           </div>`;
         }).join('');
@@ -479,6 +534,20 @@
     }
 
     // === STUDENT FLOW ===
+    async function ensureStudentLessonLoaded(lessonId) {
+      if (studentLesson && studentLessonId === lessonId) return;
+      const cached = getCachedLesson(lessonId);
+      if (cached) { studentLesson = cached; studentLessonId = lessonId; return; }
+
+      const lSnap = await getDoc(lessonsDocRef(lessonId));
+      const data = lSnap.data();
+      if (data) {
+        studentLesson = { title: data.title, slides: data.slides };
+        studentLessonId = lessonId;
+        cacheLesson(lessonId, studentLesson);
+      }
+    }
+
     async function studentJoin(pin) {
       await ensureAnonAuth();
 
@@ -486,7 +555,6 @@
       studentPin = pin;
       $('student-pin-active').textContent = pin;
 
-      // create participant
       await setDoc(participantDocRef(pin, auth.currentUser.uid), {
         name,
         joinedAt: serverTimestamp(),
@@ -503,27 +571,46 @@
 
       unsub.session = onSnapshot(sessionDocRef(pin), async (snap) => {
         const d = snap.data();
-        if (!d) {
-          showStudentWaiting('Сесията не е намерена.');
-          return;
-        }
+        if (!d) { showStudentWaiting('Сесията не е намерена.'); return; }
 
-        const phase = d.phase || 'waiting';
-        const slide = d.currentSlide || null;
+        studentLessonId = d.lessonId || studentLessonId;
+        studentActiveSlideIdx = d.activeSlideIdx ?? -1;
+        studentPhase = d.phase || 'waiting';
 
-        // If session done
-        if (phase === 'done') {
+        if (studentPhase === 'done') {
           showStudentWaiting('Сесията приключи. Благодаря!');
           return;
         }
 
-        // Show interactive only
-        if (!slide || !isInteractiveSlide(slide)) {
-          showStudentWaiting('Гледай екрана отпред…');
+        if (!studentLessonId) {
+          showStudentWaiting('Зареждам урок…');
           return;
         }
 
-        showStudentInteraction(slide, phase);
+        await ensureStudentLessonLoaded(studentLessonId);
+
+        const slide = (studentLesson?.slides && studentActiveSlideIdx >= 0) ? studentLesson.slides[studentActiveSlideIdx] : null;
+
+        // Only interactive slides on phones
+        if (!slide || !isInteractiveSlide(slide)) {
+          const msg = studentPhase === 'waiting'
+            ? 'Очакваме старт…'
+            : 'Гледай екрана отпред…';
+          showStudentWaiting(msg);
+          // stop any "my answer" listener
+          if (unsub.answerMine) { unsub.answerMine(); unsub.answerMine = null; }
+          return;
+        }
+
+        showStudentInteraction(slide, studentPhase, studentActiveSlideIdx);
+
+        // Listen to MY answer for this slide to prevent double-submit & show sent status
+        if (unsub.answerMine) { unsub.answerMine(); unsub.answerMine = null; }
+        unsub.answerMine = onSnapshot(answerDocRef(pin, studentActiveSlideIdx, auth.currentUser.uid), (aSnap) => {
+          const exists = aSnap.exists();
+          updateStudentSubmitState({ hasAnswer: exists, phase: studentPhase });
+          if (exists) $('student-sent').classList.remove('hidden');
+        });
       });
     }
 
@@ -533,19 +620,36 @@
       $('student-waiting-msg').textContent = msg;
     }
 
-    function showStudentInteraction(slide, phase) {
+    function updateStudentSubmitState({ hasAnswer, phase }) {
+      const locked = (phase === 'locked' || phase === 'reveal');
+      const btn = $('btn-student-submit');
+
+      if (hasAnswer) {
+        btn.textContent = 'ИЗПРАТЕНО ✅';
+        btn.classList.add('disabled');
+        return;
+      }
+
+      btn.textContent = locked ? 'ЗАКЛЮЧЕНО 🔒' : 'Потвърди';
+      btn.classList.toggle('disabled', locked);
+    }
+
+    function showStudentInteraction(slide, phase, slideIdx) {
       hide('student-waiting');
       show('student-interaction');
+
       $('student-q-title').textContent = slide.title || 'Въпрос';
       $('student-q-sub').textContent = slide.body || '';
       $('student-phase').textContent = phase.toUpperCase();
 
       $('student-sent').classList.add('hidden');
       const body = $('student-q-body');
+      body.innerHTML = '';
 
-      // Disable if locked/reveal
       const locked = (phase === 'locked' || phase === 'reveal');
-      $('btn-student-submit').classList.toggle('disabled', locked);
+
+      // Default state (may be overridden by "hasAnswer" snapshot)
+      updateStudentSubmitState({ hasAnswer: false, phase });
 
       if (slide.interaction.kind === 'mcq') {
         const opts = slide.interaction.options || [];
@@ -565,7 +669,7 @@
           });
         });
 
-        $('btn-student-submit').onclick = () => submitStudentAnswer(slide, { answerIndex: selected });
+        $('btn-student-submit').onclick = () => submitStudentAnswer(slide, slideIdx, { answerIndex: selected });
 
       } else if (slide.interaction.kind === 'short') {
         body.innerHTML = `
@@ -576,21 +680,14 @@
         `;
         $('btn-student-submit').onclick = () => {
           const txt = $('short-input').value ?? '';
-          submitStudentAnswer(slide, { answerText: txt });
+          submitStudentAnswer(slide, slideIdx, { answerText: txt });
         };
       }
     }
 
-    async function submitStudentAnswer(slide, payload) {
+    async function submitStudentAnswer(slide, slideIdx, payload) {
       const pin = studentPin;
       if (!pin || !auth.currentUser) return;
-
-      // must have active slide index from session doc, fetch once (cheap)
-      const sSnap = await getDoc(sessionDocRef(pin));
-      const sData = sSnap.data();
-      const slideIdx = sData?.activeSlideIdx;
-
-      if (slideIdx === undefined || slideIdx === null || slideIdx < 0) return;
 
       // Validate
       if (slide.interaction.kind === 'mcq') {
@@ -604,6 +701,21 @@
         if (!t) { alert('Напиши отговор.'); return; }
       }
 
+      const sSnap = await getDoc(sessionDocRef(pin));
+      const sData = sSnap.data();
+      const phase = sData?.phase || 'waiting';
+      const activeIdx = sData?.activeSlideIdx;
+
+      // Guard against stale submits
+      if (phase === 'locked' || phase === 'reveal') {
+        alert('Заключено.');
+        return;
+      }
+      if (activeIdx !== slideIdx) {
+        alert('Слайдът вече е сменен.');
+        return;
+      }
+
       const name = ($('student-name').value.trim() || 'Ученик');
 
       await setDoc(answerDocRef(pin, slideIdx, auth.currentUser.uid), {
@@ -615,6 +727,7 @@
       }, { merge: true });
 
       $('student-sent').classList.remove('hidden');
+      updateStudentSubmitState({ hasAnswer: true, phase });
     }
 
     // === UTIL ===
@@ -650,10 +763,11 @@
       cleanupSubs();
       try { await signOut(auth); } catch(e) {}
       studentPin = null;
+      studentLessonId = null;
+      studentLesson = null;
       setMode('welcome');
     });
 
-    // Prefill pin from URL (?pin=1234)
     window.addEventListener('DOMContentLoaded', () => {
       setMode('welcome');
       setStatus('ready');
