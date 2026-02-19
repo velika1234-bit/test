@@ -50,5 +50,616 @@
           <input id="student-pin" class="w-full p-4 rounded-2xl border-2 border-slate-200 font-black text-2xl tracking-[.2em] outline-none focus:border-sky-600" placeholder="1234" inputmode="numeric" />
         </div>
 
-        <button id="btn-stu
+        <button id="btn-student-join" class="btn w-full py-4 bg-sky-600 hover:bg-sky-700 text-white">Влез</button>
 
+        <div class="muted text-xs font-bold">
+          Ако отвориш линка с <code>?pin=1234</code>, PIN се попълва автоматично.
+        </div>
+      </div>
+
+      <!-- HOST -->
+      <div class="card p-6 space-y-4 bg-slate-900 text-white border-0">
+        <div class="text-xl font-black">Хост (учител)</div>
+        <div class="text-slate-300 font-bold text-sm">Стартираш сесия и контролираш темпото (Next / Lock / Reveal).</div>
+
+        <div class="space-y-2">
+          <label class="text-xs font-black uppercase tracking-widest text-slate-400">Парола (тест)</label>
+          <input id="teacher-pass" type="password" class="w-full p-4 rounded-2xl bg-white/10 border-2 border-white/10 font-bold outline-none focus:border-sky-500" placeholder="••••••" />
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <button id="btn-host-login" class="btn py-4 bg-sky-600 hover:bg-sky-500 text-white">Вход</button>
+          <button id="btn-load-demo" class="btn py-4 bg-white/10 hover:bg-white/15 text-white">Demo урок</button>
+        </div>
+
+        <div class="text-slate-300 text-xs font-bold">
+          Demo урокът е вграден. После ще го замениш с редактора ти.
+        </div>
+      </div>
+    </section>
+
+    <!-- SCREEN: HOST -->
+    <section id="screen-host" class="hidden space-y-6">
+      <div class="card p-6">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div class="space-y-1">
+            <div class="text-sm font-black uppercase tracking-widest muted">Сесия</div>
+            <div class="text-4xl font-black tracking-tight">
+              PIN: <span id="host-pin" class="text-sky-700">—</span>
+            </div>
+            <div class="muted font-bold text-sm">
+              QR/линк към учениците:
+              <span id="host-join-link" class="font-black"></span>
+            </div>
+          </div>
+
+          <div class="flex gap-2 flex-wrap">
+            <button id="btn-host-start" class="btn px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white">Start</button>
+            <button id="btn-host-next" class="btn px-6 py-3 bg-slate-800 hover:bg-black text-white">Next</button>
+            <button id="btn-host-lock" class="btn px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white">Lock</button>
+            <button id="btn-host-reveal" class="btn px-6 py-3 bg-sky-600 hover:bg-sky-700 text-white">Reveal</button>
+            <button id="btn-host-end" class="btn px-6 py-3 bg-rose-500 hover:bg-rose-600 text-white">End</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid lg:grid-cols-3 gap-6">
+        <!-- Host Slide -->
+        <div class="lg:col-span-2 card p-6 min-h-[420px]">
+          <div class="flex items-center justify-between">
+            <div class="space-y-1">
+              <div class="pill inline-block">HOST VIEW</div>
+              <div id="host-slide-title" class="text-2xl font-black mt-3">—</div>
+              <div id="host-slide-meta" class="muted font-bold text-sm">—</div>
+            </div>
+            <div class="text-right">
+              <div class="muted text-xs font-black uppercase tracking-widest">Слайд</div>
+              <div id="host-slide-counter" class="text-2xl font-black">—</div>
+            </div>
+          </div>
+
+          <div id="host-slide-body" class="mt-6 text-lg font-bold leading-relaxed muted">
+            Стартирай сесия и натисни Start.
+          </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="card p-6">
+          <div class="pill inline-block mb-4">LIVE STATS</div>
+
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <div class="muted font-black uppercase tracking-widest text-xs">Ученици</div>
+              <div id="stat-participants" class="text-xl font-black">0</div>
+            </div>
+
+            <div class="flex items-center justify-between">
+              <div class="muted font-black uppercase tracking-widest text-xs">Отговорили</div>
+              <div id="stat-answered" class="text-xl font-black">0</div>
+            </div>
+
+            <div class="mt-4 border-t pt-4">
+              <div class="muted font-black uppercase tracking-widest text-xs mb-2">MCQ разпределение</div>
+              <div id="stat-mcq" class="space-y-2 muted font-bold text-sm">
+                <div>—</div>
+              </div>
+            </div>
+
+            <div class="mt-4 border-t pt-4">
+              <div class="muted font-black uppercase tracking-widest text-xs mb-2">Short отговори</div>
+              <div id="stat-short" class="space-y-2 text-sm">
+                <div class="muted font-bold">—</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SCREEN: STUDENT -->
+    <section id="screen-student" class="hidden space-y-6">
+      <div class="card p-6">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <div class="pill inline-block">STUDENT VIEW</div>
+            <div class="text-2xl font-black mt-3">PIN: <span id="student-pin-active" class="text-sky-700">—</span></div>
+            <div class="muted font-bold text-sm">На телефона излизат само интерактивните слайдове.</div>
+          </div>
+          <button id="btn-student-leave" class="btn px-6 py-3 bg-slate-800 hover:bg-black text-white">Изход</button>
+        </div>
+      </div>
+
+      <!-- Waiting -->
+      <div id="student-waiting" class="card p-10 text-center">
+        <div class="text-6xl mb-4">👀</div>
+        <div id="student-waiting-msg" class="text-2xl font-black">Гледай екрана отпред…</div>
+        <div class="muted font-bold mt-2">Когато започне дейност, тук ще се появи.</div>
+      </div>
+
+      <!-- Interaction -->
+      <div id="student-interaction" class="hidden card p-6">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <div class="pill inline-block">АКТИВНА ДЕЙНОСТ</div>
+            <div id="student-q-title" class="text-2xl font-black mt-3">—</div>
+            <div id="student-q-sub" class="muted font-bold text-sm mt-1">—</div>
+          </div>
+          <div class="text-right">
+            <div class="muted text-xs font-black uppercase tracking-widest">Статус</div>
+            <div id="student-phase" class="text-xl font-black">—</div>
+          </div>
+        </div>
+
+        <div id="student-q-body" class="mt-6"></div>
+
+        <div class="mt-6 flex gap-3">
+          <button id="btn-student-submit" class="btn flex-1 py-4 bg-sky-600 hover:bg-sky-700 text-white">Потвърди</button>
+        </div>
+
+        <div id="student-sent" class="hidden mt-4 p-4 rounded-2xl bg-emerald-50 text-emerald-700 font-black">
+          Изпратено ✅
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <script type="module">
+    // Firebase SDK (CDN Modules)
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import {
+      getFirestore, doc, setDoc, getDoc, updateDoc, serverTimestamp,
+      collection, onSnapshot, getDocs
+    } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+    // === CONFIG ===
+    const appId = 'lessonmaster-live-test';
+    let firebaseConfig;
+    try { firebaseConfig = JSON.parse(__firebase_config); }
+    catch (e) {
+      firebaseConfig = {
+        apiKey: "AIzaSyA0WhbnxygznaGCcdxLBHweZZThezUO314",
+        authDomain: "videoquiz-ultimate.firebaseapp.com",
+        projectId: "videoquiz-ultimate",
+        storageBucket: "videoquiz-ultimate.firebasestorage.app",
+        messagingSenderId: "793138692820",
+        appId: "1:793138692820:web:8ee2418d28d47fca6bf141"
+      };
+    }
+
+    const TEACHER_PASSWORD = 'vilidaf76'; // тестово
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+
+    // Firestore paths (matches your "artifacts/appId/public/data" pattern)
+    const sessionDocRef = (pin) => doc(db, 'artifacts', appId, 'public', 'data', 'sessions', pin);
+    const participantsColRef = (pin) => collection(db, 'artifacts', appId, 'public', 'data', 'sessions', pin, 'participants');
+    const participantDocRef = (pin, uid) => doc(db, 'artifacts', appId, 'public', 'data', 'sessions', pin, 'participants', uid);
+    const answersColRef = (pin, slideIdx) => collection(db, 'artifacts', appId, 'public', 'data', 'sessions', pin, 'responses', String(slideIdx), 'answers');
+    const answerDocRef = (pin, slideIdx, uid) => doc(db, 'artifacts', appId, 'public', 'data', 'sessions', pin, 'responses', String(slideIdx), 'answers', uid);
+
+    // === DEMO LESSON ===
+    const demoLesson = {
+      title: 'Demo: Възраждане (тест)',
+      slides: [
+        { title: 'Въведение', body: 'Днес говорим за… (само на екрана отпред)', visibility: 'host' },
+        { title: 'MCQ: Кое е вярно?', body: 'Избери 1 верен отговор.', visibility: 'students',
+          interaction: { kind: 'mcq', options: ['А', 'Б', 'В', 'Г'], correct: 2, points: 1 }
+        },
+        { title: 'Обяснение', body: 'Ето защо верният е… (само на екрана)', visibility: 'host' },
+        { title: 'Short: Ключова дума', body: 'Напиши ключова дума за епохата.', visibility: 'students',
+          interaction: { kind: 'short', correctText: 'възраждане', caseSensitive: false, points: 1 }
+        },
+        { title: 'Финал', body: 'Браво! (само на екрана)', visibility: 'host' },
+      ]
+    };
+
+    // === STATE ===
+    let currentUser = null;
+    let mode = 'welcome'; // welcome | host | student
+    let hostPin = null;
+    let studentPin = null;
+
+    let hostLesson = null;
+    let hostActiveSlideIdx = -1;
+    let hostPhase = 'waiting';
+
+    let unsub = { session: null, participants: null, answers: null };
+
+    // === UI HELPERS ===
+    const $ = (id) => document.getElementById(id);
+    const show = (id) => $(id).classList.remove('hidden');
+    const hide = (id) => $(id).classList.add('hidden');
+
+    const setPill = (id, text) => $(id).textContent = text;
+
+    function setMode(nextMode) {
+      mode = nextMode;
+      hide('screen-welcome'); hide('screen-host'); hide('screen-student');
+      if (nextMode === 'welcome') show('screen-welcome');
+      if (nextMode === 'host') show('screen-host');
+      if (nextMode === 'student') show('screen-student');
+      setPill('mode-pill', `MODE: ${nextMode.toUpperCase()}`);
+    }
+
+    function setStatus(text) {
+      setPill('status-pill', `STATUS: ${text}`);
+    }
+
+    function safeLower(s) { return (s ?? '').toString().trim().toLowerCase(); }
+
+    function isInteractiveSlide(slide) {
+      return !!(slide && slide.visibility !== 'host' && slide.interaction && (slide.interaction.kind === 'mcq' || slide.interaction.kind === 'short'));
+    }
+
+    // === AUTH ===
+    onAuthStateChanged(auth, (u) => {
+      currentUser = u;
+      if (u) setStatus(`signed-in (${u.isAnonymous ? 'anon' : 'user'})`);
+      else setStatus('signed-out');
+    });
+
+    async function ensureAnonAuth() {
+      if (!auth.currentUser) await signInAnonymously(auth);
+    }
+
+    // === HOST FLOW ===
+    function genPin() {
+      return String(Math.floor(1000 + Math.random() * 9000));
+    }
+
+    async function hostLogin() {
+      const pw = $('teacher-pass').value;
+      if (pw !== TEACHER_PASSWORD) {
+        alert('Грешна парола (тест).');
+        return;
+      }
+      await ensureAnonAuth();
+      hostLesson = JSON.parse(localStorage.getItem('lm_demo_lesson') || 'null') || demoLesson;
+      hostPin = genPin();
+
+      // Create session
+      await setDoc(sessionDocRef(hostPin), {
+        pin: hostPin,
+        title: hostLesson.title,
+        lesson: hostLesson,              // за тест: качваме целия урок; после ще е lessonId
+        activeSlideIdx: -1,
+        phase: 'waiting',
+        createdAt: serverTimestamp()
+      });
+
+      $('host-pin').textContent = hostPin;
+      const joinLink = `${window.location.origin}${window.location.pathname}?pin=${hostPin}`;
+      $('host-join-link').textContent = joinLink;
+
+      setMode('host');
+      attachHostListeners(hostPin);
+      renderHostSlide(null);
+    }
+
+    async function hostStart() {
+      if (!hostPin) return;
+      // move to first slide
+      hostActiveSlideIdx = 0;
+      hostPhase = isInteractiveSlide(hostLesson.slides[0]) ? 'answering' : 'active';
+      await updateDoc(sessionDocRef(hostPin), {
+        activeSlideIdx: hostActiveSlideIdx,
+        phase: hostPhase,
+        currentSlide: hostLesson.slides[hostActiveSlideIdx]
+      });
+    }
+
+    async function hostNext() {
+      if (!hostPin) return;
+      const nextIdx = hostActiveSlideIdx + 1;
+      if (!hostLesson || nextIdx >= hostLesson.slides.length) {
+        await updateDoc(sessionDocRef(hostPin), { phase: 'done' });
+        alert('Край на урока.');
+        return;
+      }
+      hostActiveSlideIdx = nextIdx;
+      hostPhase = isInteractiveSlide(hostLesson.slides[nextIdx]) ? 'answering' : 'active';
+
+      await updateDoc(sessionDocRef(hostPin), {
+        activeSlideIdx: hostActiveSlideIdx,
+        phase: hostPhase,
+        currentSlide: hostLesson.slides[hostActiveSlideIdx]
+      });
+    }
+
+    async function hostLock() {
+      if (!hostPin) return;
+      await updateDoc(sessionDocRef(hostPin), { phase: 'locked' });
+    }
+
+    async function hostReveal() {
+      if (!hostPin) return;
+      await updateDoc(sessionDocRef(hostPin), { phase: 'reveal' });
+    }
+
+    async function hostEnd() {
+      if (!hostPin) return;
+      await updateDoc(sessionDocRef(hostPin), { phase: 'done' });
+      cleanupSubs();
+      hostPin = null;
+      setMode('welcome');
+    }
+
+    function cleanupSubs() {
+      Object.values(unsub).forEach(fn => { try { fn && fn(); } catch(e) {} });
+      unsub = { session: null, participants: null, answers: null };
+    }
+
+    function attachHostListeners(pin) {
+      cleanupSubs();
+
+      // Session snapshot
+      unsub.session = onSnapshot(sessionDocRef(pin), (snap) => {
+        const d = snap.data();
+        if (!d) return;
+
+        hostLesson = d.lesson || hostLesson;
+        hostActiveSlideIdx = d.activeSlideIdx ?? -1;
+        hostPhase = d.phase || 'waiting';
+
+        $('host-slide-counter').textContent = hostLesson ? `${Math.max(hostActiveSlideIdx,0)+1} / ${hostLesson.slides.length}` : '—';
+        renderHostSlide(d.currentSlide || null);
+
+        // answers listener for current slide only (if interactive)
+        const slide = d.currentSlide;
+        if (unsub.answers) { unsub.answers(); unsub.answers = null; }
+        if (slide && hostActiveSlideIdx >= 0 && isInteractiveSlide(slide)) {
+          unsub.answers = onSnapshot(answersColRef(pin, hostActiveSlideIdx), (qsnap) => {
+            const answers = qsnap.docs.map(x => ({ id: x.id, ...x.data() }));
+            renderStatsForSlide(slide, answers);
+            $('stat-answered').textContent = String(answers.length);
+          });
+        } else {
+          // reset stats
+          $('stat-answered').textContent = '0';
+          $('stat-mcq').innerHTML = `<div class="muted font-bold">—</div>`;
+          $('stat-short').innerHTML = `<div class="muted font-bold">—</div>`;
+        }
+      });
+
+      // Participants snapshot
+      unsub.participants = onSnapshot(participantsColRef(pin), (snap) => {
+        $('stat-participants').textContent = String(snap.size);
+      });
+    }
+
+    function renderHostSlide(slide) {
+      if (!slide) {
+        $('host-slide-title').textContent = '—';
+        $('host-slide-meta').textContent = '—';
+        $('host-slide-body').textContent = 'Стартирай сесия и натисни Start.';
+        return;
+      }
+      $('host-slide-title').textContent = slide.title || '(без заглавие)';
+      $('host-slide-meta').textContent = `visibility: ${slide.visibility || 'host'} • phase: ${hostPhase}`;
+      $('host-slide-body').textContent = slide.body || '';
+    }
+
+    function renderStatsForSlide(slide, answers) {
+      const kind = slide.interaction.kind;
+
+      if (kind === 'mcq') {
+        const opts = slide.interaction.options || [];
+        const counts = Array(opts.length).fill(0);
+        for (const a of answers) {
+          const idx = Number(a.answerIndex);
+          if (!Number.isNaN(idx) && idx >= 0 && idx < counts.length) counts[idx]++;
+        }
+        $('stat-mcq').innerHTML = opts.map((t, i) => {
+          const isCorrect = (i === slide.interaction.correct);
+          return `
+            <div class="flex items-center justify-between">
+              <div class="font-black ${isCorrect ? 'text-emerald-700' : 'text-slate-700'}">${i+1}. ${t}${isCorrect ? ' ✅' : ''}</div>
+              <div class="font-black">${counts[i] || 0}</div>
+            </div>
+          `;
+        }).join('');
+        $('stat-short').innerHTML = `<div class="muted font-bold">—</div>`;
+      }
+
+      if (kind === 'short') {
+        $('stat-mcq').innerHTML = `<div class="muted font-bold">—</div>`;
+        const preview = answers.slice(0, 10).map(a => {
+          const txt = (a.answerText ?? '').toString();
+          return `<div class="p-2 rounded-xl bg-slate-50 border border-slate-200">
+            <div class="text-xs font-black uppercase tracking-widest muted">${a.name || a.id}</div>
+            <div class="font-black">${escapeHtml(txt) || '—'}</div>
+          </div>`;
+        }).join('');
+        $('stat-short').innerHTML = preview || `<div class="muted font-bold">Няма отговори още.</div>`;
+      }
+    }
+
+    // === STUDENT FLOW ===
+    async function studentJoin(pin) {
+      await ensureAnonAuth();
+
+      const name = $('student-name').value.trim() || 'Ученик';
+      studentPin = pin;
+      $('student-pin-active').textContent = pin;
+
+      // create participant
+      await setDoc(participantDocRef(pin, auth.currentUser.uid), {
+        name,
+        joinedAt: serverTimestamp(),
+        score: 0
+      }, { merge: true });
+
+      setMode('student');
+      attachStudentListeners(pin);
+      showStudentWaiting('Гледай екрана отпред…');
+    }
+
+    function attachStudentListeners(pin) {
+      cleanupSubs();
+
+      unsub.session = onSnapshot(sessionDocRef(pin), async (snap) => {
+        const d = snap.data();
+        if (!d) {
+          showStudentWaiting('Сесията не е намерена.');
+          return;
+        }
+
+        const phase = d.phase || 'waiting';
+        const slide = d.currentSlide || null;
+
+        // If session done
+        if (phase === 'done') {
+          showStudentWaiting('Сесията приключи. Благодаря!');
+          return;
+        }
+
+        // Show interactive only
+        if (!slide || !isInteractiveSlide(slide)) {
+          showStudentWaiting('Гледай екрана отпред…');
+          return;
+        }
+
+        showStudentInteraction(slide, phase);
+      });
+    }
+
+    function showStudentWaiting(msg) {
+      show('student-waiting');
+      hide('student-interaction');
+      $('student-waiting-msg').textContent = msg;
+    }
+
+    function showStudentInteraction(slide, phase) {
+      hide('student-waiting');
+      show('student-interaction');
+      $('student-q-title').textContent = slide.title || 'Въпрос';
+      $('student-q-sub').textContent = slide.body || '';
+      $('student-phase').textContent = phase.toUpperCase();
+
+      $('student-sent').classList.add('hidden');
+      const body = $('student-q-body');
+
+      // Disable if locked/reveal
+      const locked = (phase === 'locked' || phase === 'reveal');
+      $('btn-student-submit').classList.toggle('disabled', locked);
+
+      if (slide.interaction.kind === 'mcq') {
+        const opts = slide.interaction.options || [];
+        body.innerHTML = `
+          <div class="space-y-3" id="mcq-list">
+            ${opts.map((t, i) => `<button class="opt w-full text-left" data-idx="${i}">${i+1}. ${escapeHtml(t)}</button>`).join('')}
+          </div>
+        `;
+        let selected = null;
+
+        body.querySelectorAll('.opt').forEach(btn => {
+          btn.addEventListener('click', () => {
+            if (locked) return;
+            body.querySelectorAll('.opt').forEach(x => x.classList.remove('selected'));
+            btn.classList.add('selected');
+            selected = Number(btn.dataset.idx);
+          });
+        });
+
+        $('btn-student-submit').onclick = () => submitStudentAnswer(slide, { answerIndex: selected });
+
+      } else if (slide.interaction.kind === 'short') {
+        body.innerHTML = `
+          <div class="space-y-2">
+            <label class="text-xs font-black uppercase tracking-widest muted">Твоят отговор</label>
+            <input id="short-input" class="w-full p-4 rounded-2xl border-2 border-slate-200 font-black outline-none focus:border-sky-600" placeholder="Напиши..." />
+          </div>
+        `;
+        $('btn-student-submit').onclick = () => {
+          const txt = $('short-input').value ?? '';
+          submitStudentAnswer(slide, { answerText: txt });
+        };
+      }
+    }
+
+    async function submitStudentAnswer(slide, payload) {
+      const pin = studentPin;
+      if (!pin || !auth.currentUser) return;
+
+      // must have active slide index from session doc, fetch once (cheap)
+      const sSnap = await getDoc(sessionDocRef(pin));
+      const sData = sSnap.data();
+      const slideIdx = sData?.activeSlideIdx;
+
+      if (slideIdx === undefined || slideIdx === null || slideIdx < 0) return;
+
+      // Validate
+      if (slide.interaction.kind === 'mcq') {
+        if (payload.answerIndex === null || payload.answerIndex === undefined || Number.isNaN(Number(payload.answerIndex))) {
+          alert('Избери отговор.');
+          return;
+        }
+      }
+      if (slide.interaction.kind === 'short') {
+        const t = (payload.answerText ?? '').toString().trim();
+        if (!t) { alert('Напиши отговор.'); return; }
+      }
+
+      const name = ($('student-name').value.trim() || 'Ученик');
+
+      await setDoc(answerDocRef(pin, slideIdx, auth.currentUser.uid), {
+        uid: auth.currentUser.uid,
+        name,
+        kind: slide.interaction.kind,
+        ...payload,
+        answeredAt: serverTimestamp()
+      }, { merge: true });
+
+      $('student-sent').classList.remove('hidden');
+    }
+
+    // === UTIL ===
+    function escapeHtml(s) {
+      return (s ?? '').toString()
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    // === WIRE UI ===
+    $('btn-load-demo').addEventListener('click', () => {
+      localStorage.setItem('lm_demo_lesson', JSON.stringify(demoLesson));
+      alert('Demo урокът е зареден локално (localStorage). Натисни Вход.');
+    });
+
+    $('btn-host-login').addEventListener('click', hostLogin);
+    $('btn-host-start').addEventListener('click', hostStart);
+    $('btn-host-next').addEventListener('click', hostNext);
+    $('btn-host-lock').addEventListener('click', hostLock);
+    $('btn-host-reveal').addEventListener('click', hostReveal);
+    $('btn-host-end').addEventListener('click', hostEnd);
+
+    $('btn-student-join').addEventListener('click', async () => {
+      const pin = $('student-pin').value.trim();
+      if (!pin) return alert('Въведи PIN.');
+      await studentJoin(pin);
+    });
+
+    $('btn-student-leave').addEventListener('click', async () => {
+      cleanupSubs();
+      try { await signOut(auth); } catch(e) {}
+      studentPin = null;
+      setMode('welcome');
+    });
+
+    // Prefill pin from URL (?pin=1234)
+    window.addEventListener('DOMContentLoaded', () => {
+      setMode('welcome');
+      setStatus('ready');
+      const p = new URLSearchParams(window.location.search).get('pin');
+      if (p) $('student-pin').value = p;
+    });
+  </script>
+</body>
+</html>
