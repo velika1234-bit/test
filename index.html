@@ -514,7 +514,7 @@
         title: hostLesson.title,
         theme: hostLesson.theme || { backgroundType: 'color', backgroundValue: '#111827', overlayOpacity: 0.45, fontPreset: 'large' },
         slides: hostLesson.slides,
-        hostUid: aith.currentUser.uid,
+        hostUid: auth.currentUser.uid,
         createdAt: serverTimestamp()
       });
 
@@ -526,7 +526,7 @@
         activeSlideIdx: -1,
         phase: 'waiting',          // waiting | active | answering | locked | reveal | done
         attention: false,
-        hostUid: aith.currentUser.uid,
+        hostUid: auth.currentUser.uid,
         createdAt: serverTimestamp()
       });
 
@@ -1283,4 +1283,5 @@
   </script>
 </body>
 </html>
+
 
