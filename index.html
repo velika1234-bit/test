@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>LessonMaster Live (v3.4 • Scoring + Motivating Finish)</title>
+  <title>LessonMaster Live (v3.5 • Roster Status)</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body { -webkit-font-smoothing: antialiased; }
@@ -166,7 +166,7 @@
 
     <header class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
       <div>
-        <div class="text-3xl font-black tracking-tight">LessonMaster Live (v3.4)</div>
+        <div class="text-3xl font-black tracking-tight">LessonMaster Live (v3.5)</div>
         <div class="muted font-bold text-sm">Lock → Reveal • Тихо точкуване • Мотивиращ финал • Без класиране по време на теста</div>
       </div>
       <div class="flex gap-2 flex-wrap">
@@ -621,7 +621,7 @@
       await updateDoc(sessionDocRef(hostPin), { activeSlideIdx: hostActiveSlideIdx, phase: hostPhase });
     }
 
-    async function hostLock() { if (hostPin) await updateDoc(sessionDocRef(hostPin), { phase: 'locked' }); }
+    async function hostLock() { if (hostPin) await updateDoc(sessionDocRef(hostPin), { phase: 'locked' }); rosterLocked = true; renderRoster(); }); }
     async function hostReveal() { if (hostPin) await updateDoc(sessionDocRef(hostPin), { phase: 'reveal' }); }
 
     async function hostToggleAttention() {
@@ -916,6 +916,93 @@
       document.body.classList.remove('present');
       $('present-shell').classList.add('hidden');
       try { if (document.fullscreenElement) await document.exitFullscreen(); } catch (e) {}
+    }
+
+    
+    
+    function toggleRoster() {
+      const body = document.getElementById('roster-body');
+      if (!body) return;
+      body.style.display = body.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function renderRoster() {
+
+      const grid = $('roster-grid');
+      const totalEl = $('roster-total-count');
+      const ansEl = $('roster-answered-count');
+      if (!grid || !totalEl || !ansEl) return;
+
+      const total = hostParticipants.length;
+      let answered = 0;
+
+      
+      const sorted = [...hostParticipants].sort((a,b) => {
+        const aAnswered = answeredUids.has(a.uid);
+        const bAnswered = answeredUids.has(b.uid);
+        if (aAnswered === bAnswered) return a.name.localeCompare(b.name);
+        return aAnswered ? 1 : -1; // non-answered first
+      });
+
+      const items = sorted.map(p => {
+        const isAnswered = answeredUids.has(p.uid);
+        const status = rosterLocked ? (isAnswered ? 'answered' : 'missed') : (isAnswered ? 'answered' : 'pending');
+        if (isAnswered) answered++;
+
+        const badge = status === 'answered' ? '🟢' : status === 'pending' ? '🔴' : '⚪';
+        const cls =
+          status === 'answered' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' :
+          status === 'pending' ? 'bg-rose-50 border-rose-200 text-rose-800' :
+          'bg-slate-50 border-slate-200 text-slate-600';
+
+        const safeName = (p.name || 'Ученик').replace(/[<>&"]/g, s => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[s]));
+        return `<div class="px-3 py-2 rounded-xl border ${cls} text-xs font-black flex items-center gap-2">
+          <span>${badge}</span><span class="truncate">${safeName}</span>
+        </div>`;
+      }).join('');
+
+
+      grid.innerHTML = items || `<div class="col-span-full text-center text-slate-400 font-bold py-6">Няма участници още.</div>`;
+      totalEl.textContent = String(total);
+      ansEl.textContent = String(answered);
+    }
+
+    function resetRosterForSlide() {
+      answeredUids = new Set();
+      rosterLocked = false;
+      renderRoster();
+    }
+
+    function attachRosterListeners() {
+      if (!hostPin) return;
+
+      // participants list
+      if (unsub.rosterParticipants) { unsub.rosterParticipants(); unsub.rosterParticipants = null; }
+      unsub.rosterParticipants = onSnapshot(participantsColRef(hostPin), (snap) => {
+        hostParticipants = snap.docs.map(d => ({ uid: d.id, name: (d.data()||{}).name || '' }));
+        renderRoster();
+      });
+
+      // answers for current slide
+      attachRosterAnswersListener(hostActiveSlideIdx);
+    }
+
+    function attachRosterAnswersListener(slideIdx) {
+      if (!hostPin) return;
+      if (unsub.rosterAnswers) { unsub.rosterAnswers(); unsub.rosterAnswers = null; }
+
+      if (slideIdx == null || slideIdx < 0) {
+        answeredUids = new Set();
+        renderRoster();
+        return;
+      }
+
+      unsub.rosterAnswers = onSnapshot(answersColRef(hostPin, slideIdx), (snap) => {
+        const set = new Set();
+        snap.docs.forEach(d => set.add(d.id));
+        answeredUids = set;
+        renderRoster();
+      });
     }
 
     function syncPresentBadges() {
