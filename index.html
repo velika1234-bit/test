@@ -3,24 +3,22 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LessonMaster Live v3.2 Classroom Mode</title>
+<title>LessonMaster Live v3.2.1 Classroom Mode</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <style>
 body.present { background:#020617; }
 .present-shell { position:fixed; inset:0; display:flex; flex-direction:column; }
 .present-stage { flex:1; padding:1rem; }
 .slide { height:100%; display:flex; align-items:center; justify-content:center; }
-.slide-card { background:white; padding:3rem; border-radius:1.5rem; max-width:1200px; width:100%; }
-.big-title { font-size:4rem; font-weight:900; }
-.big-text { font-size:2rem; font-weight:700; margin-top:1.5rem; }
+.slide-card { background:white; padding:3rem; border-radius:1.5rem; max-width:1400px; width:100%; text-align:center; }
 .present-controls { height:90px; background:#0f172a; color:white; display:flex; align-items:center; justify-content:space-between; padding:1rem; }
-.present-controls button { padding:12px 20px; border-radius:999px; font-weight:800; }
+.present-controls button, .present-controls select { padding:10px 18px; border-radius:999px; font-weight:800; }
 </style>
 </head>
 <body class="bg-slate-100">
 
 <div class="p-6">
-<h1 class="text-3xl font-black mb-4">LessonMaster v3.2 – Classroom Mode</h1>
+<h1 class="text-3xl font-black mb-4">LessonMaster v3.2.1 – Font Preset</h1>
 <button onclick="enterPresent()" class="px-6 py-3 bg-sky-600 text-white rounded-xl font-bold">Enter Presentation Mode</button>
 </div>
 
@@ -28,35 +26,68 @@ body.present { background:#020617; }
 <div class="present-stage">
 <div class="slide">
 <div class="slide-card">
-<div class="big-title">Classroom Mode</div>
-<div class="big-text">Оптимизирано за проектор и интерактивна дъска</div>
+<div id="slide-title"></div>
+<div id="slide-subtitle"></div>
 </div>
 </div>
 </div>
 <div class="present-controls">
 <div>PIN: 1234</div>
-<div>
+<div class="flex items-center gap-4">
+<select id="fontPreset" onchange="applyPreset()">
+<option value="standard">Standard</option>
+<option value="large">Large</option>
+<option value="xlarge">Extra Large</option>
+</select>
 <button onclick="alert('Next slide')">Next</button>
 <button onclick="alert('Attention mode')">Attention</button>
-<button onclick="exitPresent()" class="bg-rose-600">Exit</button>
+<button onclick="exitPresent()" class="bg-rose-600 text-white">Exit</button>
 </div>
 </div>
 </div>
 
 <script>
+const FONT_PRESETS = {
+  standard: 1.0,
+  large: 1.18,
+  xlarge: 1.32
+};
+
+function renderSlide(scale){
+  const title = document.getElementById('slide-title');
+  const subtitle = document.getElementById('slide-subtitle');
+  
+  title.style.fontSize = (4 * scale) + "rem";
+  title.style.fontWeight = "900";
+  title.innerText = "Classroom Mode";
+
+  subtitle.style.fontSize = (2.4 * scale) + "rem";
+  subtitle.style.fontWeight = "800";
+  subtitle.style.marginTop = "1.5rem";
+  subtitle.innerText = "Глобално мащабиране на текста според залата";
+}
+
+function applyPreset(){
+  const preset = document.getElementById('fontPreset').value;
+  const scale = FONT_PRESETS[preset];
+  renderSlide(scale);
+}
+
 function enterPresent(){
-document.body.classList.add('present');
-document.getElementById('present').classList.remove('hidden');
-if(!document.fullscreenElement){
-document.documentElement.requestFullscreen().catch(()=>{});
+  document.body.classList.add('present');
+  document.getElementById('present').classList.remove('hidden');
+  if(!document.fullscreenElement){
+    document.documentElement.requestFullscreen().catch(()=>{});
+  }
+  applyPreset();
 }
-}
+
 function exitPresent(){
-document.body.classList.remove('present');
-document.getElementById('present').classList.add('hidden');
-if(document.fullscreenElement){
-document.exitFullscreen().catch(()=>{});
-}
+  document.body.classList.remove('present');
+  document.getElementById('present').classList.add('hidden');
+  if(document.fullscreenElement){
+    document.exitFullscreen().catch(()=>{});
+  }
 }
 </script>
 
