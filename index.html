@@ -621,8 +621,49 @@
       await updateDoc(sessionDocRef(hostPin), { activeSlideIdx: hostActiveSlideIdx, phase: hostPhase });
     }
 
-    async function hostLock() { if (hostPin) await updateDoc(sessionDocRef(hostPin), { phase: 'locked' }); rosterLocked = true; renderRoster(); }); }
-    async function hostReveal() { if (hostPin) await updateDoc(sessionDocRef(hostPin), { phase: 'reveal' }); }
+    async function hostLock() { if (hostPin) await updateDoc(sessionDocRef(hostPin), { phase: 'locked' }); rosterLocked = true; renderRoster(); }
+    async function hostReveal() {
+      if (!hostPin) return;
+
+      const sRef = sessionDocRef(hostPin);
+      const sSnap = await getDoc(sRef);
+      const sData = sSnap.data() || {};
+      const slideIdx = Number(sData.activeSlideIdx ?? hostActiveSlideIdx);
+
+      // Switch to reveal first
+      await updateDoc(sRef, { phase: 'reveal' });
+      rosterLocked = true; renderRoster();
+
+      const slide = hostLesson?.slides?.[slideIdx] ?? null;
+      if (!isInteractiveSlide(slide)) return;
+
+      // Prevent double-scoring
+      const scoredSlides = sData.scoredSlides || {};
+      if (scoredSlides[String(slideIdx)] === true) return;
+
+      const ptsRaw = Number(slide?.interaction?.points ?? 1);
+      const points = Number.isFinite(ptsRaw) ? ptsRaw : 1;
+
+      const qs = await getDocs(answersColRef(hostPin, slideIdx));
+      const updates = [];
+      qs.forEach((d) => {
+        const ans = d.data() || {};
+        const uid = ans.uid || d.id;
+        const correct = isAnswerCorrect(slide, ans);
+        if (correct && uid) {
+          updates.push(updateDoc(participantDocRef(hostPin, uid), {
+            score: increment(points),
+            correctCount: increment(1)
+          }));
+        }
+      });
+
+      await Promise.allSettled(updates);
+      scoredSlides[String(slideIdx)] = true;
+      await updateDoc(sRef, { scoredSlides });
+
+      syncPresentBadges();
+    }); }
 
     async function hostToggleAttention() {
       if (!hostPin) return;
