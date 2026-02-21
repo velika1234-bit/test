@@ -951,16 +951,50 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
       return caseSensitive ? t : t.toLowerCase();
     }
 
-    function isAnswerCorrect(slide, ans) {
-      const kind = slide?.interaction?.kind;
-      if (!kind) return false;
-
-      if (kind === 'mcq') {
-        const correct = Number(slide.interaction.correct);
-        const given = Number(ans.answerIndex);
-        return Number.isFinite(correct) && Number.isFinite(given) && correct === given;
-      }
-
+        function isAnswerCorrect(slide, ans) {
+          const kind = slide?.interaction?.kind;
+          if (!kind) return false;
+    
+          // MCQ (single)
+          if (kind === 'mcq') {
+            const correct = Number(slide.interaction.correct);
+            const given = Number(ans.answerIndex);
+            return Number.isFinite(correct) && Number.isFinite(given) && correct === given;
+          }
+    
+          // Multi-select
+          if (kind === 'multi') {
+            const correct = Array.isArray(slide.interaction.correct)
+              ? slide.interaction.correct.map(Number).filter(Number.isFinite).sort((a,b)=>a-b)
+              : [];
+            const given = Array.isArray(ans.answerIndexes)
+              ? ans.answerIndexes.map(Number).filter(Number.isFinite).sort((a,b)=>a-b)
+              : [];
+            if (correct.length !== given.length) return false;
+            for (let i = 0; i < correct.length; i++) if (correct[i] !== given[i]) return false;
+            return true;
+          }
+    
+          // Short text
+          if (kind === 'short') {
+            const expected = String(slide.interaction.correctText || '').trim().toLowerCase();
+            const given = String(ans.text || '').trim().toLowerCase();
+            if (!expected) return false;
+            return expected === given;
+          }
+    
+          // Labeling (ordered targets)
+          if (kind === 'labeling') {
+            const correct = Array.isArray(slide?.interaction?.targets) ? slide.interaction.targets.map(t => String(t.text || '')) : [];
+            const given = Array.isArray(ans?.placements) ? ans.placements.map(x => String(x || '')) : [];
+            if (correct.length === 0 || given.length !== correct.length) return false;
+            for (let i = 0; i < correct.length; i++) if (given[i] !== correct[i]) return false;
+            return true;
+          }
+    
+          return false;
+        }
+    
 
     async function gradeSlideIfNeeded(slideIdx, slide) {
       if (!hostPin) return;
@@ -993,35 +1027,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
       }
     }
 
-      if (kind === 'multi') {
-        const correct = Array.isArray(slide.interaction.correct) ? slide.interaction.correct.map(Number).filter(Number.isFinite).sort((a,b)=>a-b) : [];
-        const given = Array.isArray(ans.answerIndexes) ? ans.answerIndexes.map(Number).filter(Number.isFinite).sort((a,b)=>a-b) : [];
-        if (correct.length !== given.length) return false;
-        for (let i=0;i<correct.length;i++) if (correct[i] !== given[i]) return false;
-        return true;
-      }
-
-      if (kind === 'short') {
-        const cs = !!slide.interaction.caseSensitive;
-        const correct = normalizeShort(slide.interaction.correctText, cs);
-        const given = normalizeShort(ans.answerText, cs);
-        return !!correct && correct === given;
-      }
-
-      if (kind === 'labeling') {
-        const targets = slide.interaction.targets || [];
-        const map = ans.labelingMap || {};
-        // correct if every target index is mapped correctly
-        for (let i=0;i<targets.length;i++) {
-          const expected = (targets[i]?.text ?? '').toString();
-          const got = (map[i] ?? map[String(i)] ?? '').toString();
-          if (!expected || got !== expected) return false;
-        }
-        return targets.length > 0;
-      }
-
-      return false;
-    }
 
     async function submitStudentAnswer(slide, slideIdx, payload) {
       const pin = studentPin;
