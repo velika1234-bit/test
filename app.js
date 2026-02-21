@@ -1045,36 +1045,37 @@ rosterLocked = true;
     
           // Short text
           if (kind === 'short') {
-            const expected = String(slide.interaction.correctText || '').trim().toLowerCase();
-            const given = String(ans.text || '').trim().toLowerCase();
-            if (!expected) return false;
-            return expected === given;
+            const correctText = normalizeText(slide.interaction.correctText, slide.interaction.caseSensitive);
+            const givenRaw = (ans && (ans.answerText ?? ans.text)) ?? '';
+            const givenText = normalizeText(givenRaw, slide.interaction.caseSensitive);
+            return correctText && givenText && correctText === givenText;
           }
-    
-          // Labeling (ordered targets)
+
+// Labeling (ordered targets)
           if (kind === 'labeling') {
-            const correct = Array.isArray(slide?.interaction?.targets) ? slide.interaction.targets.map(t => String(t.text || '')) : [];
-            const given = Array.isArray(ans?.placements) ? ans.placements.map(x => String(x || '')) : [];
-            if (correct.length === 0 || given.length !== correct.length) return false;
-            for (let i = 0; i < correct.length; i++) if (given[i] !== correct[i]) return false;
-            return true;
+            const targets = Array.isArray(slide?.interaction?.targets) ? slide.interaction.targets : [];
+            const map = (ans && (ans.labelingMap ?? ans.placements)) ?? {};
+            for (let i = 0; i < targets.length; i++) {
+              const need = normalizeText(targets[i]?.text, false);
+              const got = normalizeText(map[i], false);
+              if (!need || !got || need !== got) return false;
+            }
+            return targets.length > 0;
           }
-    
-          return false;
+
+return false;
         }
 
     function labelingStats(slide, ans) {
-      const correct = Array.isArray(slide?.interaction?.targets)
-        ? slide.interaction.targets.map(t => String(t?.text ?? '').trim())
-        : [];
-      const given = Array.isArray(ans?.placements)
-        ? ans.placements.map(x => String(x ?? '').trim())
-        : [];
-      const total = correct.length;
+      const targets = Array.isArray(slide?.interaction?.targets) ? slide.interaction.targets : [];
+      const map = (ans && (ans.labelingMap ?? ans.placements)) ?? {};
       let hit = 0;
-      if (total === 0 || given.length !== total) return { hit: 0, total };
-      for (let i = 0; i < total; i++) if (given[i] === correct[i]) hit++;
-      return { hit, total };
+      for (let i = 0; i < targets.length; i++) {
+        const need = normalizeText(targets[i]?.text, false);
+        const got = normalizeText(map[i], false);
+        if (need && got && need === got) hit++;
+      }
+      return { hit, total: targets.length };
     }
 
     function earnedPoints(slide, ans) {
@@ -1107,6 +1108,11 @@ rosterLocked = true;
 
       await setDoc(pRef, {
         final: payload,
+        // handy flat fields for quick reports / queries
+        score: payload?.scoreRounded ?? payload?.score ?? 0,
+        maxScore: payload?.maxScore ?? 0,
+        correct: payload?.correctSlides ?? payload?.correctAnswers ?? 0,
+        total: payload?.totalSlides ?? payload?.totalQuestions ?? 0,
         finalizedAt: serverTimestamp(),
       }, { merge: true });
 
