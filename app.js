@@ -295,8 +295,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
       renderRoster(); }
     async function hostReveal() { if (hostPin) await updateDoc(sessionDocRef(hostPin), { phase: 'reveal' });
       const slide = hostLesson?.slides?.[hostActiveSlideIdx];
-      await gradeSlideIfNeeded(hostActiveSlideIdx, slide);
-      rosterLocked = true;
+rosterLocked = true;
       renderRoster(); }
 
     async function hostToggleAttention() {
@@ -693,8 +692,27 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         fb.classList.add('hidden');
         fb.classList.remove('bg-emerald-50','text-emerald-700','bg-rose-50','text-rose-700','bg-slate-100','text-slate-700');
 
-        if (phase !== 'reveal') return;
         if (!myAnswer) return;
+        if (phase !== 'locked' && phase !== 'reveal') return;
+
+        const kind = slide?.interaction?.kind;
+
+        if (kind === 'labeling') {
+          const { hit, total } = labelingStats(slide, myAnswer);
+          const pts = Number(slide?.interaction?.points ?? 1);
+          const maxPts = Number.isFinite(pts) ? pts : 1;
+          const earned = earnedPoints(slide, myAnswer);
+
+          if (total > 0) {
+            const ok = hit === total;
+            fb.textContent = ok
+              ? `Перфектно! ✅ (${hit}/${total})`
+              : `Верни етикети: ${hit}/${total} • Точки: ${earned.toFixed(2)} / ${maxPts}`;
+            fb.classList.add(ok ? 'bg-emerald-50' : 'bg-slate-100', ok ? 'text-emerald-700' : 'text-slate-700');
+            fb.classList.remove('hidden');
+          }
+          return;
+        }
 
         const ok = isAnswerCorrect(slide, myAnswer);
         fb.textContent = ok ? 'Вярно ✅' : 'Грешно ❌';
@@ -704,7 +722,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
     }
 
     
-    async function showStudentFinal(pin) {
+    async async function showStudentFinal(pin) {
       hide('student-waiting');
       show('student-interaction'); // keep section visible for layout
       hide('student-q-body');
@@ -715,35 +733,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
       // show final card
       show('student-final');
 
-      // subscribe to my participant doc for latest score
-      if (unsub.participants) { /* keep */ }
-      const pRef = participantDocRef(pin, auth.currentUser.uid);
-      // one-time read + live updates
-      const render = (pdata) => {
-        const score = Number(pdata?.score ?? 0);
-        const maxScore = Number(pdata?.maxScore ?? 0);
-        const correct = Number(pdata?.correctCount ?? 0);
-        const totalQ = Number(pdata?.totalQuestions ?? 0);
-
-        $('final-score').textContent = String(score);
-        $('final-max').textContent = String(maxScore);
-        $('final-correct').textContent = String(correct);
-        $('final-total').textContent = String(totalQ);
-
-        const pct = (maxScore > 0) ? (score / maxScore) : 0;
-        $('final-bar').style.width = `${Math.max(0, Math.min(1, pct)) * 100}%`;
-
-        const { badgeText, badgeClass, msg } = pickMotivation(pct);
-        const b = $('final-badge');
-        b.textContent = badgeText;
-        b.className = `final-badge ${badgeClass}`;
-
-        $('final-msg').textContent = msg;
-
-        if (pct >= 0.75) popConfetti();
-      };
-
-      // ensure button exists
+      // ensure exit button exists
       $('btn-final-exit').onclick = async () => {
         cleanupSubs();
         try { await signOut(auth); } catch(e) {}
@@ -753,13 +743,91 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         setMode('welcome');
       };
 
-      const snap = await getDoc(pRef);
-      render(snap.data() || {});
-      // live
-      if (unsub.answerMine) { unsub.answerMine(); unsub.answerMine = null; }
-      // attach a dedicated participant listener
-      // NOTE: store in unsub.answerMine slot to keep structure minimal
-      unsub.answerMine = onSnapshot(pRef, (ps) => render(ps.data() || {}));
+      // Compute locally from my answers (no write permissions needed)
+      await ensureStudentLessonLoaded(studentLessonId);
+      const slides = studentLesson?.slides || [];
+      const interactive = slides
+        .map((s, idx) => ({ s, idx }))
+        .filter(x => isInteractiveSlide(x.s));
+
+      let maxScore = 0;
+      let score = 0;
+      let correctSlides = 0;
+      let totalQ = interactive.length;
+
+      // fetch my answer docs for each slide
+      const uid = auth.currentUser.uid;
+      const snaps = await Promise.all(interactive.map(x => getDoc(answerDocRef(pin, x.idx, uid))));
+
+      for (let k = 0; k < interactive.length; k++) {
+        const slide = interactive[k].s;
+        const pts = Number(slide?.interaction?.points ?? 1);
+        const maxPts = Number.isFinite(pts) ? pts : 1;
+        maxScore += maxPts;
+
+        const aSnap = snaps[k];
+        if (!aSnap.exists()) continue;
+
+        const ans = aSnap.data() || {};
+        const earned = earnedPoints(slide, ans);
+        score += earned;
+
+        // correctCount counts fully-correct slides (for labeling: all targets correct)
+        if (isAnswerCorrect(slide, ans)) correctSlides++;
+      }
+
+      // Round score to 2 decimals, but show integer nicely if whole number
+      const scoreRounded = Math.round(score * 100) / 100;
+
+      $('final-score').textContent = String(scoreRounded);
+      $('final-max').textContent = String(maxScore);
+      $('final-correct').textContent = String(correctSlides);
+      $('final-total').textContent = String(totalQ);
+
+      const pct = (maxScore > 0) ? (scoreRounded / maxScore) : 0;
+      $('final-bar').style.width = `${Math.max(0, Math.min(1, pct)) * 100}%`;
+
+      const { badgeText, badgeClass, msg } = pickMotivation(pct);
+      const b = $('final-badge');
+      b.textContent = badgeText;
+      b.className = `final-badge ${badgeClass}`;
+
+      $('final-msg').textContent = msg;
+
+      
+      // Submit final result to Firebase (host report)
+      const statusEl = document.getElementById('final-submit-status');
+      const resendBtn = document.getElementById('btn-final-resend');
+
+      async function doSubmit() {
+        try {
+          if (statusEl) statusEl.textContent = 'Изпращане на резултата...';
+          if (resendBtn) resendBtn.disabled = true;
+
+          const payload = {
+            score: scoreRounded,
+            maxScore,
+            correctSlides,
+            totalQ,
+            percent: Math.round(pct * 100),
+            lessonId: studentLessonId,
+          };
+
+          const r = await submitFinalResult(pin, payload);
+          if (statusEl) statusEl.textContent = (r && r.skipped) ? 'Резултатът вече е изпратен ✅' : 'Резултатът е изпратен ✅';
+        } catch (e) {
+          console.warn('final submit failed', e);
+          if (statusEl) statusEl.textContent = 'Не успях да изпратя резултата. Провери интернет/правила и пробвай пак.';
+          if (resendBtn) resendBtn.disabled = false;
+        }
+      }
+
+      if (resendBtn) resendBtn.onclick = doSubmit;
+
+      // Auto-submit once on final screen
+      await doSubmit();
+
+      if (pct >= 0.75) popConfetti();
     }
 
     function pickMotivation(pct) {
@@ -994,6 +1062,59 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
     
           return false;
         }
+
+    function labelingStats(slide, ans) {
+      const correct = Array.isArray(slide?.interaction?.targets)
+        ? slide.interaction.targets.map(t => String(t?.text ?? '').trim())
+        : [];
+      const given = Array.isArray(ans?.placements)
+        ? ans.placements.map(x => String(x ?? '').trim())
+        : [];
+      const total = correct.length;
+      let hit = 0;
+      if (total === 0 || given.length !== total) return { hit: 0, total };
+      for (let i = 0; i < total; i++) if (given[i] === correct[i]) hit++;
+      return { hit, total };
+    }
+
+    function earnedPoints(slide, ans) {
+      const pts = Number(slide?.interaction?.points ?? 1);
+      const maxPts = Number.isFinite(pts) ? pts : 1;
+      const kind = slide?.interaction?.kind;
+      if (!kind) return 0;
+
+      if (kind === 'labeling') {
+        const { hit, total } = labelingStats(slide, ans);
+        if (!total) return 0;
+        return maxPts * (hit / total);
+      }
+
+      return isAnswerCorrect(slide, ans) ? maxPts : 0;
+    }
+
+
+    async function submitFinalResult(pin, payload) {
+      // Each student writes only their own participant doc (uid as doc id).
+      // Using setDoc(..., {merge:true}) makes it idempotent.
+      const uid = auth.currentUser?.uid;
+      if (!uid) throw new Error('No auth user');
+
+      const pRef = participantDocRef(pin, uid);
+
+      // Prevent duplicate resubmits in the same session (still safe due to merge)
+      const key = `lm_submitted_${pin}_${uid}`;
+      if (localStorage.getItem(key) === '1') return { skipped: true };
+
+      await setDoc(pRef, {
+        final: payload,
+        finalizedAt: serverTimestamp(),
+      }, { merge: true });
+
+      localStorage.setItem(key, '1');
+      return { ok: true };
+    }
+
+
     
 
     async function gradeSlideIfNeeded(slideIdx, slide) {
