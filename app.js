@@ -153,10 +153,13 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
     }
 
     function attachRosterListeners() {
-      if (!hostPin) return;
+        console.log('attachRosterListeners called, hostPin =', hostPin);
+        if (!hostPin) return;
 
       if (unsub.rosterParticipants) { unsub.rosterParticipants(); unsub.rosterParticipants = null; }
       unsub.rosterParticipants = onSnapshot(participantsColRef(hostPin), (snap) => {
+        console.log('🔥 onSnapshot participants: получихме', snap.docs.length, 'документа');
+        snap.docs.forEach(d => console.log(' -', d.id, d.data().name));
         hostParticipants = snap.docs.map(d => ({ uid: d.id, name: (d.data() || {}).name || '' }));
         renderRoster();
       });
