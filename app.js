@@ -722,7 +722,7 @@ rosterLocked = true;
     }
 
     
-    async async function showStudentFinal(pin) {
+    async function showStudentFinal(pin) {
       hide('student-waiting');
       show('student-interaction'); // keep section visible for layout
       hide('student-q-body');
