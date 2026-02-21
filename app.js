@@ -56,6 +56,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
     let mode = 'welcome';
 
     let hostPin = null, hostLessonId = null, hostLesson = null, hostActiveSlideIdx = -1, hostPhase = 'waiting', hostAttention = false;
+    let hostGradedSlides = new Set();
 
     // Roster UI state
     let hostParticipants = []; // [{uid,name}]
@@ -243,6 +244,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         scoredSlides: {}
       });
 
+      hostGradedSlides = new Set();
       hostPin = genPin();
       await setDoc(sessionDocRef(hostPin), {
         pin: hostPin,
@@ -292,6 +294,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
       rosterLocked = true;
       renderRoster(); }
     async function hostReveal() { if (hostPin) await updateDoc(sessionDocRef(hostPin), { phase: 'reveal' });
+      const slide = hostLesson?.slides?.[hostActiveSlideIdx];
+      await gradeSlideIfNeeded(hostActiveSlideIdx, slide);
       rosterLocked = true;
       renderRoster(); }
 
@@ -956,6 +960,38 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         const given = Number(ans.answerIndex);
         return Number.isFinite(correct) && Number.isFinite(given) && correct === given;
       }
+
+
+    async function gradeSlideIfNeeded(slideIdx, slide) {
+      if (!hostPin) return;
+      if (!slide || !isInteractiveSlide(slide)) return;
+      if (hostGradedSlides.has(slideIdx)) return;
+
+      hostGradedSlides.add(slideIdx);
+
+      try {
+        const qsnap = await getDocs(answersColRef(hostPin, slideIdx));
+        const pts = Number(slide?.interaction?.points ?? 1) || 1;
+
+        const updates = [];
+        qsnap.forEach((d) => {
+          const ans = d.data() || {};
+          const uid = d.id;
+          const ok = isAnswerCorrect(slide, ans);
+          const add = ok ? pts : 0;
+          updates.push({ uid, ok, add });
+        });
+
+        for (const u of updates) {
+          await updateDoc(participantDocRef(hostPin, u.uid), {
+            score: increment(u.add),
+            correctCount: increment(u.ok ? 1 : 0),
+          });
+        }
+      } catch (e) {
+        console.warn('gradeSlideIfNeeded failed', e);
+      }
+    }
 
       if (kind === 'multi') {
         const correct = Array.isArray(slide.interaction.correct) ? slide.interaction.correct.map(Number).filter(Number.isFinite).sort((a,b)=>a-b) : [];
