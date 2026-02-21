@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>LessonMaster Live (v3.5 • Roster Status)</title>
+  <title>LessonMaster Live (v3.6 • Stable Roster)</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body { -webkit-font-smoothing: antialiased; }
@@ -166,7 +166,7 @@
 
     <header class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
       <div>
-        <div class="text-3xl font-black tracking-tight">LessonMaster Live (v3.5)</div>
+        <div class="text-3xl font-black tracking-tight">LessonMaster Live (v3.6)</div>
         <div class="muted font-bold text-sm">Lock → Reveal • Тихо точкуване • Мотивиращ финал • Без класиране по време на теста</div>
       </div>
       <div class="flex gap-2 flex-wrap">
@@ -316,6 +316,26 @@
             <div class="muted font-black uppercase tracking-widest text-xs mb-2">Labeling</div>
             <div id="stat-labeling" class="muted font-bold text-sm">—</div>
           </div>
+
+          <!-- Roster Status Panel (teacher control; visible on projector but subtle) -->
+          <div class="mt-4 p-4 rounded-2xl bg-slate-50 border border-slate-200">
+            <div class="flex items-center justify-between">
+              <div class="text-xs font-black uppercase tracking-widest text-slate-500">Кой е отговорил</div>
+              <div class="flex items-center gap-3">
+                <div class="text-xs font-black text-slate-600">
+                  <span id="roster-answered-count">0</span>/<span id="roster-total-count">0</span>
+                </div>
+                <button id="btn-roster-toggle" class="text-xs font-bold text-slate-400 hover:text-slate-600">Покажи/Скрий</button>
+              </div>
+            </div>
+            <div id="roster-body">
+              <div class="mt-3 grid grid-cols-2 md:grid-cols-3 gap-2" id="roster-grid"></div>
+              <div class="mt-3 text-[11px] font-bold text-slate-500">
+                🟢 отговорил • 🔴 още отговаря • ⚪ не е отговорил (след Lock)
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
     </section>
@@ -489,7 +509,13 @@
     let currentUser = null;
     let mode = 'welcome';
 
-    let hostPin = null, hostLessonId = null, hostLesson = null, hostActiveSlideIdx = -1, hostPhase = 'waiting', hostAttention = false;
+    let hostPin = null, hostLessonId = null, hostLesson = null, hostActiveSlideIdx = -1, hostPhase = 'waiting', hostAttention
+    let hostParticipants = []; // [{uid,name}]
+    let answeredUids = new Set();
+    let rosterLocked = false;
+    let rosterCollapsed = false;
+    let lastRosterSlideIdx = null;
+ = false;
     let studentPin = null, studentLessonId = null, studentLesson = null, studentActiveSlideIdx = -1, studentPhase = 'waiting', studentAttention = false;
     let hostParticipantsCount = 0, hostAnsweredCount = 0;
 
@@ -499,7 +525,7 @@
     function cacheLesson(lessonId, lessonObj) { try { localStorage.setItem(lessonCacheKey(lessonId), JSON.stringify(lessonObj)); } catch(e) {} }
     function getCachedLesson(lessonId) { try { const raw = localStorage.getItem(lessonCacheKey(lessonId)); return raw ? JSON.parse(raw) : null; } catch(e) { return null; } }
 
-    let unsub = { session: null, participants: null, answers: null, answerMine: null };
+    let unsub = { session: null, participants: null, answers: null, answerMine: null, rosterParticipants: null, rosterAnswers: null };
 
     // === UI HELPERS ===
     const $ = (id) => document.getElementById(id);
@@ -597,6 +623,12 @@
       attachHostListeners(hostPin);
       renderHostSurface(null);
       syncPresentBadges();
+      wireRosterToggleOnce();
+      attachRosterParticipantsListener(hostPin);
+      resetRosterForSlide();
+      attachRosterAnswersListener(hostPin, -1);
+      setRosterCollapsed(false);
+
     }
 
     async function hostStart() {
@@ -621,49 +653,8 @@
       await updateDoc(sessionDocRef(hostPin), { activeSlideIdx: hostActiveSlideIdx, phase: hostPhase });
     }
 
-    async function hostLock() { if (hostPin) await updateDoc(sessionDocRef(hostPin), { phase: 'locked' }); rosterLocked = true; renderRoster(); }
-    async function hostReveal() {
-      if (!hostPin) return;
-
-      const sRef = sessionDocRef(hostPin);
-      const sSnap = await getDoc(sRef);
-      const sData = sSnap.data() || {};
-      const slideIdx = Number(sData.activeSlideIdx ?? hostActiveSlideIdx);
-
-      // Switch to reveal first
-      await updateDoc(sRef, { phase: 'reveal' });
-      rosterLocked = true; renderRoster();
-
-      const slide = hostLesson?.slides?.[slideIdx] ?? null;
-      if (!isInteractiveSlide(slide)) return;
-
-      // Prevent double-scoring
-      const scoredSlides = sData.scoredSlides || {};
-      if (scoredSlides[String(slideIdx)] === true) return;
-
-      const ptsRaw = Number(slide?.interaction?.points ?? 1);
-      const points = Number.isFinite(ptsRaw) ? ptsRaw : 1;
-
-      const qs = await getDocs(answersColRef(hostPin, slideIdx));
-      const updates = [];
-      qs.forEach((d) => {
-        const ans = d.data() || {};
-        const uid = ans.uid || d.id;
-        const correct = isAnswerCorrect(slide, ans);
-        if (correct && uid) {
-          updates.push(updateDoc(participantDocRef(hostPin, uid), {
-            score: increment(points),
-            correctCount: increment(1)
-          }));
-        }
-      });
-
-      await Promise.allSettled(updates);
-      scoredSlides[String(slideIdx)] = true;
-      await updateDoc(sRef, { scoredSlides });
-
-      syncPresentBadges();
-    }); }
+    async function hostLock() { if (hostPin) await updateDoc(sessionDocRef(hostPin), { phase: 'locked' }); rosterLocked = true; renderRoster(); }); }
+    async function hostReveal() { if (hostPin) await updateDoc(sessionDocRef(hostPin), { phase: 'reveal' }); }
 
     async function hostToggleAttention() {
       if (!hostPin) return;
@@ -723,7 +714,16 @@
 
         hostLessonId = d.lessonId || hostLessonId;
         hostActiveSlideIdx = d.activeSlideIdx ?? -1;
+        // roster: switch listener when slide changes
+        if (lastRosterSlideIdx !== hostActiveSlideIdx) {
+          lastRosterSlideIdx = hostActiveSlideIdx;
+          resetRosterForSlide();
+          attachRosterAnswersListener(pin, hostActiveSlideIdx);
+        }
+
         hostPhase = d.phase || 'waiting';
+        rosterLocked = (hostPhase === 'locked' || hostPhase === 'reveal' || hostPhase === 'done');
+        renderRoster();
         hostAttention = !!d.attention;
 
         $('btn-host-attn').textContent = hostAttention ? 'Attention: ON' : 'Attention';
@@ -960,30 +960,35 @@
     }
 
     
-    
-    function toggleRoster() {
-      const body = document.getElementById('roster-body');
-      if (!body) return;
-      body.style.display = body.style.display === 'none' ? 'block' : 'none';
+    function setRosterCollapsed(v) {
+      rosterCollapsed = !!v;
+      const body = $('roster-body');
+      if (body) body.style.display = rosterCollapsed ? 'none' : 'block';
+    }
+
+    function wireRosterToggleOnce() {
+      const btn = $('btn-roster-toggle');
+      if (!btn) return;
+      if (btn.dataset.wired === '1') return;
+      btn.dataset.wired = '1';
+      btn.addEventListener('click', () => setRosterCollapsed(!rosterCollapsed));
     }
 
     function renderRoster() {
-
       const grid = $('roster-grid');
       const totalEl = $('roster-total-count');
       const ansEl = $('roster-answered-count');
       if (!grid || !totalEl || !ansEl) return;
 
-      const total = hostParticipants.length;
-      let answered = 0;
-
-      
       const sorted = [...hostParticipants].sort((a,b) => {
         const aAnswered = answeredUids.has(a.uid);
         const bAnswered = answeredUids.has(b.uid);
-        if (aAnswered === bAnswered) return a.name.localeCompare(b.name);
+        if (aAnswered === bAnswered) return (a.name||'').localeCompare((b.name||''));
         return aAnswered ? 1 : -1; // non-answered first
       });
+
+      const total = sorted.length;
+      let answered = 0;
 
       const items = sorted.map(p => {
         const isAnswered = answeredUids.has(p.uid);
@@ -1002,7 +1007,6 @@
         </div>`;
       }).join('');
 
-
       grid.innerHTML = items || `<div class="col-span-full text-center text-slate-400 font-bold py-6">Няма участници още.</div>`;
       totalEl.textContent = String(total);
       ansEl.textContent = String(answered);
@@ -1014,22 +1018,15 @@
       renderRoster();
     }
 
-    function attachRosterListeners() {
-      if (!hostPin) return;
-
-      // participants list
+    function attachRosterParticipantsListener(pin) {
       if (unsub.rosterParticipants) { unsub.rosterParticipants(); unsub.rosterParticipants = null; }
-      unsub.rosterParticipants = onSnapshot(participantsColRef(hostPin), (snap) => {
+      unsub.rosterParticipants = onSnapshot(participantsColRef(pin), (snap) => {
         hostParticipants = snap.docs.map(d => ({ uid: d.id, name: (d.data()||{}).name || '' }));
         renderRoster();
       });
-
-      // answers for current slide
-      attachRosterAnswersListener(hostActiveSlideIdx);
     }
 
-    function attachRosterAnswersListener(slideIdx) {
-      if (!hostPin) return;
+    function attachRosterAnswersListener(pin, slideIdx) {
       if (unsub.rosterAnswers) { unsub.rosterAnswers(); unsub.rosterAnswers = null; }
 
       if (slideIdx == null || slideIdx < 0) {
@@ -1038,9 +1035,9 @@
         return;
       }
 
-      unsub.rosterAnswers = onSnapshot(answersColRef(hostPin, slideIdx), (snap) => {
+      unsub.rosterAnswers = onSnapshot(answersColRef(pin, slideIdx), (snap) => {
         const set = new Set();
-        snap.docs.forEach(d => set.add(d.id));
+        snap.docs.forEach(d => set.add(d.id)); // doc id is uid
         answeredUids = set;
         renderRoster();
       });
@@ -1130,6 +1127,8 @@
 
         // subscribe to my answer for this slide
         if (unsub.answerMine) { unsub.answerMine(); unsub.answerMine = null; }
+      if (unsub.rosterParticipants) { unsub.rosterParticipants(); unsub.rosterParticipants = null; }
+      if (unsub.rosterAnswers) { unsub.rosterAnswers(); unsub.rosterAnswers = null; }
         myAnswerCache = null;
 
         unsub.answerMine = onSnapshot(answerDocRef(pin, studentActiveSlideIdx, auth.currentUser.uid), (aSnap) => {
