@@ -74,9 +74,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
     function getCachedLesson(lessonId) { try { const raw = localStorage.getItem(lessonCacheKey(lessonId)); return raw ? JSON.parse(raw) : null; } catch(e) { return null; } }
 
     let unsub = { session: null, participants: null, answers: null, answerMine: null };
-    console.log("Path test:",
-    participantsColRef("3138").path);
-    // === UI HELPERS ===
+    
+// === UI HELPERS ===
     const $ = (id) => document.getElementById(id);
     const show = (id) => $(id).classList.remove('hidden');
     const hide = (id) => $(id).classList.add('hidden');
@@ -405,7 +404,7 @@ rosterLocked = true;
         }
       });
 
-      unsub.participants = onSnapshot(participantsColRef(pin), (snap) => {
+      unsub.participants = onSnapshot(participantsColRef(String(studentPin ?? pin)), (snap) => {
         hostParticipantsCount = snap.size;
         $('stat-participants').textContent = String(snap.size);
         syncPresentBadges();
