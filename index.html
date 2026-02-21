@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>LessonMaster Live (v3.6 • Stable Roster)</title>
+  <title>LessonMaster Live (v3.6.1 • Stable Roster FIX)</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body { -webkit-font-smoothing: antialiased; }
@@ -509,13 +509,13 @@
     let currentUser = null;
     let mode = 'welcome';
 
-    let hostPin = null, hostLessonId = null, hostLesson = null, hostActiveSlideIdx = -1, hostPhase = 'waiting', hostAttention
+    let hostPin = null, hostLessonId = null, hostLesson = null, hostActiveSlideIdx = -1, hostPhase = 'waiting', hostAttention = false;
     let hostParticipants = []; // [{uid,name}]
     let answeredUids = new Set();
     let rosterLocked = false;
     let rosterCollapsed = false;
     let lastRosterSlideIdx = null;
- = false;
+
     let studentPin = null, studentLessonId = null, studentLesson = null, studentActiveSlideIdx = -1, studentPhase = 'waiting', studentAttention = false;
     let hostParticipantsCount = 0, hostAnsweredCount = 0;
 
