@@ -74,7 +74,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
     function getCachedLesson(lessonId) { try { const raw = localStorage.getItem(lessonCacheKey(lessonId)); return raw ? JSON.parse(raw) : null; } catch(e) { return null; } }
 
     let unsub = { session: null, participants: null, answers: null, answerMine: null };
-
+    consile.log("Path test:",
+    participantsColRef(pin).path);
     // === UI HELPERS ===
     const $ = (id) => document.getElementById(id);
     const show = (id) => $(id).classList.remove('hidden');
