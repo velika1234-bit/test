@@ -75,7 +75,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 
     let unsub = { session: null, participants: null, answers: null, answerMine: null };
     console.log("Path test:",
-    participantsColRef(pin).path);
+    participantsColRef("3138").path);
     // === UI HELPERS ===
     const $ = (id) => document.getElementById(id);
     const show = (id) => $(id).classList.remove('hidden');
