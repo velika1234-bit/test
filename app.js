@@ -367,8 +367,7 @@ async function loadSavedLessonToBuilder() {
   // Also sync builder text area if present on the page
   if ($('builder-lesson-title')) $('builder-lesson-title').value = found.title || 'Урок';
   if ($('builder-slides')) {
-    const lines = (found.slides || []).map(slideToBuilderLine).join('
-');
+    const lines = (found.slides || []).map(slideToBuilderLine).join('\n');
     $('builder-slides').value = lines;
     try { refreshBuilderList(); } catch(e) {}
   }
