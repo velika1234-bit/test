@@ -333,7 +333,7 @@ async function saveCurrentBuilderLesson() {
   alert('Урокът е запазен локално (Учителски панел).');
 }
 
-async function loadSavedLessonToBuilder() {
+async async function loadSavedLessonToBuilder() {
   const sel = $('teacher-saved-lessons');
   const id = sel?.value;
   if (!id) return;
@@ -364,7 +364,42 @@ async function loadSavedLessonToBuilder() {
     theme: found.theme || lessonTemplates.classbuddy.theme
   }));
 
-  // Also sync builder text area if present on the page
+  localStorage.setItem('lm_demo_lesson', JSON.stringify({
+    title: found.title || 'Урок',
+    slides: found.slides || [],
+    theme: found.theme || lessonTemplates.classbuddy.theme
+  }));
+
+  
+
+  // Apply immediately if host is already logged in
+  try {
+    const cur = JSON.parse(localStorage.getItem('lm_demo_lesson') || 'null');
+    if (cur && typeof cur === 'object') {
+      // hostLesson is used by the running host session
+      if (typeof hostLesson !== 'undefined') {
+        hostLesson = { title: cur.title, slides: cur.slides || [], theme: cur.theme || (hostLesson?.theme) };
+      }
+      // If a session is already created, overwrite the current lesson doc as well
+      if (typeof hostPin !== 'undefined' && hostPin && typeof hostLessonId !== 'undefined' && hostLessonId) {
+        await setDoc(lessonsDocRef(hostLessonId), {
+          title: cur.title,
+          theme: cur.theme,
+          slides: cur.slides || [],
+        }, { merge: true });
+        await updateDoc(sessionDocRef(hostPin), { title: cur.title });
+      }
+      // re-render if helpers exist
+      try {
+        const slide = (hostLesson?.slides && hostActiveSlideIdx >= 0) ? hostLesson.slides[hostActiveSlideIdx] : null;
+        if (typeof renderHostSurface === 'function') renderHostSurface(slide);
+        if (typeof renderPresentSurface === 'function') renderPresentSurface(slide);
+      } catch(e) {}
+    }
+  } catch(e) {
+    console.warn('apply loaded lesson failed', e);
+  }
+// Also sync builder text area if present on the page
   if ($('builder-lesson-title')) $('builder-lesson-title').value = found.title || 'Урок';
   if ($('builder-slides')) {
     const lines = (found.slides || []).map(slideToBuilderLine).join('\n');
