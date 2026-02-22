@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getFirestore, doc, setDoc, getDoc, updateDoc, serverTimestamp, collection, onSnapshot, getDocs, increment } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, doc, setDoc, getDoc, updateDoc, serverTimestamp, collection, onSnapshot, getDocs, increment, query, where, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { getAuth, signInAnonymously, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
 // === CONFIG ===
@@ -241,10 +241,11 @@ const lessonCacheKey = (lessonId) => `lm_lesson_cache_${lessonId}`;
 function cacheLesson(lessonId, lessonObj) { try { localStorage.setItem(lessonCacheKey(lessonId), JSON.stringify(lessonObj)); } catch (e) { } }
 function getCachedLesson(lessonId) { try { const raw = localStorage.getItem(lessonCacheKey(lessonId)); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
 
-const TEACHER_LESSONS_KEY = 'lm_teacher_lessons_v1';
+const TEACHER_LESSONS_KEY = 'lm_teacher_lessons_v1'; // legacy local cache (fallback)
 const AVATARS = ['🦊','🐼','🦁','🐯','🐸','🐧','🐨','🦉','🐙','🦄','🐬','🐢'];
 
-function loadTeacherLessons() {
+// --- Teacher lessons (NEW: load from Firestore; fallback to localStorage) ---
+function loadTeacherLessonsLocal() {
   try {
     const raw = localStorage.getItem(TEACHER_LESSONS_KEY);
     const arr = raw ? JSON.parse(raw) : [];
@@ -252,46 +253,127 @@ function loadTeacherLessons() {
   } catch (e) { return []; }
 }
 
-function saveTeacherLessons(items) {
-  localStorage.setItem(TEACHER_LESSONS_KEY, JSON.stringify(items || []));
+function saveTeacherLessonsLocal(items) {
+  try { localStorage.setItem(TEACHER_LESSONS_KEY, JSON.stringify(items || [])); } catch(e) {}
 }
 
-function renderTeacherLessonsSelect() {
+async function loadTeacherLessons() {
+  // If teacher is signed in with Email/Password → use Firestore lessons created in builder.html
+  const u = auth.currentUser;
+  if (u && !u.isAnonymous) {
+    try {
+      const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'lessons'), where('ownerUid', '==', u.uid));
+      const snap = await getDocs(q);
+      const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // sort client-side (avoid index requirements)
+      items.sort((a,b) => {
+        const at = (a.updatedAt?.toMillis?.() || a.createdAt?.toMillis?.() || 0);
+        const bt = (b.updatedAt?.toMillis?.() || b.createdAt?.toMillis?.() || 0);
+        return bt - at;
+      });
+      return items;
+    } catch (e) {
+      console.warn('loadTeacherLessons (firestore) failed, fallback to local', e);
+      return loadTeacherLessonsLocal();
+    }
+  }
+  // anonymous teacher (legacy demo mode)
+  return loadTeacherLessonsLocal();
+}
+
+async function renderTeacherLessonsSelect() {
   const sel = $('teacher-saved-lessons');
   if (!sel) return;
-  const items = loadTeacherLessons();
+  sel.innerHTML = '<option value="">Зареждане…</option>';
+  const items = await loadTeacherLessons();
+
   if (!items.length) {
     sel.innerHTML = '<option value="">Няма запазени уроци</option>';
     return;
   }
-  sel.innerHTML = items.map((it) => `<option value="${escapeAttr(it.id)}">${escapeHtml(it.title || 'Без име')} (${(it.slides || []).length} слайда)</option>`).join('');
+
+  sel.innerHTML = items.map((it) => {
+    const slidesCount = (it.slides || []).length;
+    const title = it.title || 'Без име';
+    return `<option value="${escapeAttr(it.id)}">${escapeHtml(title)} (${slidesCount} слайда)</option>`;
+  }).join('');
 }
 
-function saveCurrentBuilderLesson() {
+async function saveCurrentBuilderLesson() {
   const title = $('builder-lesson-title')?.value?.trim() || 'Нов урок';
   const slides = parseBuilderSlides($('builder-slides')?.value || '');
   if (!slides.length) return alert('Няма слайдове за запазване.');
-  const items = loadTeacherLessons();
+
+  // If teacher is signed in (Email/Password) → save to Firestore so LIVE can load it
+  const u = auth.currentUser;
+  if (u && !u.isAnonymous) {
+    const id = `lesson_${Date.now().toString(36)}`;
+    await setDoc(lessonsDocRef(id), {
+      ownerUid: u.uid,
+      title,
+      theme: lessonTemplates.classbuddy.theme,
+      slides,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+
+    await renderTeacherLessonsSelect();
+    // also set as demo lesson for immediate hosting
+    localStorage.setItem('lm_demo_lesson', JSON.stringify({ title, slides, theme: lessonTemplates.classbuddy.theme }));
+    alert('Урокът е запазен (Firestore) ✅');
+    return;
+  }
+
+  // Legacy local save (anonymous demo)
+  const items = loadTeacherLessonsLocal();
   const id = `lesson_${Date.now().toString(36)}`;
   items.unshift({ id, title, slides, theme: lessonTemplates.classbuddy.theme, updatedAt: Date.now() });
-  saveTeacherLessons(items.slice(0, 50));
-  renderTeacherLessonsSelect();
-  alert('Урокът е запазен в Учителски панел.');
+  saveTeacherLessonsLocal(items.slice(0, 50));
+  await renderTeacherLessonsSelect();
+  alert('Урокът е запазен локално (Учителски панел).');
 }
 
-function loadSavedLessonToBuilder() {
+async function loadSavedLessonToBuilder() {
   const sel = $('teacher-saved-lessons');
   const id = sel?.value;
   if (!id) return;
-  const items = loadTeacherLessons();
-  const found = items.find((x) => x.id === id);
-  if (!found) return;
-  $('builder-lesson-title').value = found.title || 'Урок';
-  const lines = (found.slides || []).map(slideToBuilderLine).join('\n');
-  $('builder-slides').value = lines;
-  refreshBuilderList();
-  localStorage.setItem('lm_demo_lesson', JSON.stringify({ title: found.title, slides: found.slides || [], theme: found.theme || lessonTemplates.classbuddy.theme }));
-  alert('Зареден е запазеният урок.');
+
+  const u = auth.currentUser;
+  let found = null;
+
+  if (u && !u.isAnonymous) {
+    try {
+      const snap = await getDoc(lessonsDocRef(id));
+      if (snap.exists()) found = { id: snap.id, ...snap.data() };
+    } catch (e) {
+      console.warn('loadSavedLessonToBuilder (firestore) failed, fallback local', e);
+    }
+  }
+
+  if (!found) {
+    const items = loadTeacherLessonsLocal();
+    found = items.find((x) => x.id === id) || null;
+  }
+
+  if (!found) return alert('Урокът не е намерен.');
+
+  // Put into localStorage so hostLogin can load it as "current lesson"
+  localStorage.setItem('lm_demo_lesson', JSON.stringify({
+    title: found.title || 'Урок',
+    slides: found.slides || [],
+    theme: found.theme || lessonTemplates.classbuddy.theme
+  }));
+
+  // Also sync builder text area if present on the page
+  if ($('builder-lesson-title')) $('builder-lesson-title').value = found.title || 'Урок';
+  if ($('builder-slides')) {
+    const lines = (found.slides || []).map(slideToBuilderLine).join('
+');
+    $('builder-slides').value = lines;
+    try { refreshBuilderList(); } catch(e) {}
+  }
+
+  alert('Урокът е зареден ✅ (готов за START)');
 }
 
 function slideToBuilderLine(slide) {
