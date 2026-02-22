@@ -1140,9 +1140,15 @@ function escapeAttr(s) { return escapeHtml(s); }
 function cssEscape(s) { return (s ?? '').toString().replaceAll('\\', '\\\\').replaceAll('"', '\\"'); }
 
 // === WIRE UI ===
-$('btn-build-lesson')?.addEventListener('click', buildLessonFromConstructor);
+function on(id, event, handler) {
+  const el = $(id);
+  if (!el) return;
+  el.addEventListener(event, handler);
+}
 
-$('btn-load-demo').addEventListener('click', () => {
+on('btn-build-lesson', 'click', buildLessonFromConstructor);
+
+on('btn-load-demo', 'click', () => {
   const templateEl = $('lesson-template');
   const key = templateEl?.value || 'classbuddy';
   const selectedTemplate = lessonTemplates[key] || lessonTemplates.classbuddy;
@@ -1150,35 +1156,35 @@ $('btn-load-demo').addEventListener('click', () => {
   alert(`Зареден шаблон: ${selectedTemplate.title}. Натисни Вход.`);
 });
 
-$('btn-host-login').addEventListener('click', hostLogin);
-$('btn-host-start').addEventListener('click', hostStart);
-$('btn-host-next').addEventListener('click', hostNext);
-$('btn-host-lock').addEventListener('click', hostLock);
-$('btn-host-reveal').addEventListener('click', hostReveal);
-$('btn-host-attn').addEventListener('click', hostToggleAttention);
-$('btn-host-end').addEventListener('click', hostEnd);
+on('btn-host-login', 'click', hostLogin);
+on('btn-host-start', 'click', hostStart);
+on('btn-host-next', 'click', hostNext);
+on('btn-host-lock', 'click', hostLock);
+on('btn-host-reveal', 'click', hostReveal);
+on('btn-host-attn', 'click', hostToggleAttention);
+on('btn-host-end', 'click', hostEnd);
 
-$('btn-host-full').addEventListener('click', async () => {
+on('btn-host-full', 'click', async () => {
   if (!isPresent) await enterPresentMode();
   else await exitPresentMode();
 });
 
-$('present-next').addEventListener('click', hostNext);
-$('present-lock').addEventListener('click', hostLock);
-$('present-reveal').addEventListener('click', hostReveal);
-$('present-attn').addEventListener('click', hostToggleAttention);
-$('present-exit').addEventListener('click', exitPresentMode);
+on('present-next', 'click', hostNext);
+on('present-lock', 'click', hostLock);
+on('present-reveal', 'click', hostReveal);
+on('present-attn', 'click', hostToggleAttention);
+on('present-exit', 'click', exitPresentMode);
 
-$('btn-student-submit').addEventListener('click', studentSubmitAnswer);
+on('btn-student-submit', 'click', studentSubmitAnswer);
 
-$('btn-student-join').addEventListener('click', async () => {
-  const pin = $('student-pin').value.trim();
+on('btn-student-join', 'click', async () => {
+  const pin = $('student-pin')?.value?.trim();
   if (!pin) return alert('Въведи PIN.');
   await ensureAnonAuth();
   await studentJoin(pin);
 });
 
-$('btn-final-exit')?.addEventListener('click', async () => {
+on('btn-final-exit', 'click', async () => {
   cleanupSubs();
   try { await signOut(auth); } catch (e) { }
   studentPin = null;
@@ -1187,7 +1193,7 @@ $('btn-final-exit')?.addEventListener('click', async () => {
   setMode('welcome');
 });
 
-$('btn-student-leave').addEventListener('click', async () => {
+on('btn-student-leave', 'click', async () => {
   cleanupSubs();
   try { await signOut(auth); } catch (e) { }
   studentPin = null;
@@ -1201,5 +1207,5 @@ window.addEventListener('DOMContentLoaded', () => {
   setMode('welcome');
   setStatus('ready');
   const p = new URLSearchParams(window.location.search).get('pin');
-  if (p) $('student-pin').value = p;
+  if (p && $('student-pin')) $('student-pin').value = p;
 });
