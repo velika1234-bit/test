@@ -88,8 +88,10 @@ const demoLesson = lessonTemplates.classbuddy;
 
 
 function parseBuilderSlides(text) {
-  const lines = String(text || '').split('
-').map(x => x.trim()).filter(Boolean);
+  const lines = String(text || '')
+    .split('\n')
+    .map(x => x.trim())
+    .filter(Boolean);
   const slides = [];
   for (const line of lines) {
     const [kindRaw, title = '', body = '', optionsRaw = '', correctRaw = ''] = line.split('|').map(x => (x || '').trim());
@@ -1048,9 +1050,7 @@ async function showStudentFinal(pin) {
   }
 }
 
-// --- final screen and scoring helpers omitted in this shortened file ---
-// NOTE: The rest of your original file continues below unchanged,
-// but we add missing normalizeText to prevent runtime errors.
+// --- Final screen and scoring helpers ---
 
 function normalizeText(s, caseSensitive) {
   const t = (s ?? '').toString().trim();
