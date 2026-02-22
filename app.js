@@ -333,7 +333,7 @@ async function saveCurrentBuilderLesson() {
   alert('Урокът е запазен локално (Учителски панел).');
 }
 
-async function loadSavedLessonToBuilder() {
+  async function loadSavedLessonToBuilder() {
   const sel = $('teacher-saved-lessons');
   const id = sel?.value;
   if (!id) return;
