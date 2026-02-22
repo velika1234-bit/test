@@ -287,8 +287,7 @@ function loadSavedLessonToBuilder() {
   const found = items.find((x) => x.id === id);
   if (!found) return;
   $('builder-lesson-title').value = found.title || 'Урок';
-  const lines = (found.slides || []).map(slideToBuilderLine).join('
-');
+  const lines = (found.slides || []).map(slideToBuilderLine).join('\n');
   $('builder-slides').value = lines;
   refreshBuilderList();
   localStorage.setItem('lm_demo_lesson', JSON.stringify({ title: found.title, slides: found.slides || [], theme: found.theme || lessonTemplates.classbuddy.theme }));
