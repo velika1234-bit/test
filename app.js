@@ -30,29 +30,61 @@ const answerDocRef = (pin, slideIdx, uid) => doc(db, 'artifacts', appId, 'public
 
 const FONT_PRESETS = { standard: 1.00, large: 1.18, xlarge: 1.32 };
 
-// === DEMO LESSON ===
-const demoLesson = {
-  title: 'Demo: Lock → Reveal',
-  theme: {
-    backgroundType: 'image',
-    backgroundValue: 'https://images.unsplash.com/photo-1529070538774-1843cb3265df?auto=format&fit=crop&w=1600&q=60',
-    overlayOpacity: 0.45,
-    fontPreset: 'large'
-  },
-  slides: [
-    { visibility: 'host', layout: 'title', content: { title: 'Classroom Mode', subtitle: 'Lock → Reveal • Учениците виждат вярно/грешно', image: '' } },
-    { visibility: 'host', layout: 'content', content: { title: 'Как да водиш', text: '1) Показваш въпрос • 2) Чакаш • 3) Lock • 4) Reveal • 5) Next', image: '' } },
-    { visibility: 'students', layout: 'question', content: { title: 'MCQ', text: 'Избери верния отговор.', image: '' }, interaction: { kind: 'mcq', options: ['А', 'Б', 'В', 'Г'], correct: 2, points: 2 } },
-    { visibility: 'students', layout: 'question', content: { title: 'Multi', text: 'Маркирай всички верни.', image: '' }, interaction: { kind: 'multi', options: ['A', 'B', 'C', 'D'], correct: [1, 3], points: 2 } },
-    { visibility: 'students', layout: 'question', content: { title: 'Short', text: 'Напиши една дума: "пример"', image: '' }, interaction: { kind: 'short', correctText: 'пример', caseSensitive: false, points: 2 } },
-    {
-      visibility: 'students', layout: 'question', content: { title: 'Labeling', text: 'Избери етикет и натисни цел.', image: 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=1400&q=60' },
-      interaction: { kind: 'labeling', targets: [{ x: 35, y: 35, text: 'Етикет 1' }, { x: 70, y: 55, text: 'Етикет 2' }, { x: 50, y: 75, text: 'Етикет 3' }], points: 2 }
+// === DEMO LESSONS / TEMPLATES ===
+const lessonTemplates = {
+  classbuddy: {
+    title: 'Как работи интерактивният урок',
+    theme: {
+      backgroundType: 'image',
+      backgroundValue: 'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?auto=format&fit=crop&w=1600&q=60',
+      overlayOpacity: 0.42,
+      fontPreset: 'large'
     },
-    { visibility: 'host', layout: 'content', content: { title: 'Финал', text: 'Следва: крайно класиране/резултат (по желание).', image: '' } },
-  ]
+    slides: [
+      { visibility: 'host', layout: 'title', content: { title: '1) Въведение', subtitle: 'Какво ще правим днес', image: '' } },
+      { visibility: 'host', layout: 'content', content: { title: '2) Кратко обяснение', text: 'Показваш пример и задаваш фокус въпрос към класа.', image: '' } },
+      { visibility: 'students', layout: 'question', content: { title: '3) Бърз въпрос', text: 'Кое твърдение е вярно?', image: '' }, interaction: { kind: 'mcq', options: ['Опция A', 'Опция B', 'Опция C', 'Опция D'], correct: 1, points: 2 } },
+      { visibility: 'students', layout: 'question', content: { title: '4) Приложение', text: 'Маркирай всички верни отговори.', image: '' }, interaction: { kind: 'multi', options: ['A', 'B', 'C', 'D'], correct: [0, 2], points: 2 } },
+      { visibility: 'students', layout: 'question', content: { title: '5) Рефлексия', text: 'Напиши с 1 дума какво запомни.', image: '' }, interaction: { kind: 'short', correctText: 'пример', caseSensitive: false, points: 2 } },
+      { visibility: 'host', layout: 'content', content: { title: '6) Обобщение', text: 'Финални изводи и домашна работа.', image: '' } }
+    ]
+  },
+  'quick-quiz': {
+    title: 'Quick Quiz (5 въпроса)',
+    theme: {
+      backgroundType: 'image',
+      backgroundValue: 'https://images.unsplash.com/photo-1513258496099-48168024aec0?auto=format&fit=crop&w=1600&q=60',
+      overlayOpacity: 0.36,
+      fontPreset: 'large'
+    },
+    slides: [
+      { visibility: 'host', layout: 'title', content: { title: 'Quick Quiz', subtitle: '5 въпроса • 10 точки', image: '' } },
+      { visibility: 'students', layout: 'question', content: { title: 'Въпрос 1', text: 'Избери верния отговор.', image: '' }, interaction: { kind: 'mcq', options: ['А', 'Б', 'В', 'Г'], correct: 2, points: 2 } },
+      { visibility: 'students', layout: 'question', content: { title: 'Въпрос 2', text: 'Маркирай всички верни.', image: '' }, interaction: { kind: 'multi', options: ['A', 'B', 'C', 'D'], correct: [1, 3], points: 2 } },
+      { visibility: 'students', layout: 'question', content: { title: 'Въпрос 3', text: 'Една ключова дума.', image: '' }, interaction: { kind: 'short', correctText: 'пример', caseSensitive: false, points: 2 } },
+      { visibility: 'students', layout: 'question', content: { title: 'Въпрос 4', text: 'Свържи етикетите.', image: 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=1400&q=60' }, interaction: { kind: 'labeling', targets: [{ x: 35, y: 35, text: 'Етикет 1' }, { x: 70, y: 55, text: 'Етикет 2' }, { x: 50, y: 75, text: 'Етикет 3' }], points: 2 } },
+      { visibility: 'host', layout: 'content', content: { title: 'Въпрос 5 (дискусия)', text: 'Обсъдете най-трудния въпрос.', image: '' } }
+    ]
+  },
+  science: {
+    title: 'Природни науки: Вода и климат',
+    theme: {
+      backgroundType: 'image',
+      backgroundValue: 'https://images.unsplash.com/photo-1439066615861-d1af74d74000?auto=format&fit=crop&w=1600&q=60',
+      overlayOpacity: 0.4,
+      fontPreset: 'large'
+    },
+    slides: [
+      { visibility: 'host', layout: 'title', content: { title: 'Цикъл на водата', subtitle: 'Наблюдение → Извод', image: '' } },
+      { visibility: 'host', layout: 'split', content: { title: 'Изпарение', text: 'Загряването превръща водата в пара.', image: 'https://images.unsplash.com/photo-1546549032-9571cd6b27df?auto=format&fit=crop&w=1200&q=60' } },
+      { visibility: 'students', layout: 'question', content: { title: 'Проверка', text: 'Кой етап е след кондензация?', image: '' }, interaction: { kind: 'mcq', options: ['Валеж', 'Изпарение', 'Събиране', 'Инфилтрация'], correct: 0, points: 2 } },
+      { visibility: 'students', layout: 'question', content: { title: 'Приложи', text: 'Маркирай факторите за по-бързо изпарение.', image: '' }, interaction: { kind: 'multi', options: ['Висока температура', 'Сянка', 'Вятър', 'Ниска влажност'], correct: [0, 2, 3], points: 3 } },
+      { visibility: 'host', layout: 'content', content: { title: 'Извод', text: 'Температура + вятър + влажност влияят на скоростта на изпарение.', image: '' } }
+    ]
+  }
 };
 
+const demoLesson = lessonTemplates.classbuddy;
 // === STATE ===
 let currentUser = null;
 let mode = 'welcome';
@@ -181,13 +213,10 @@ function bindRosterUI() {
 }
 
 function attachRosterListeners() {
-  console.log('attachRosterListeners called, hostPin =', hostPin);
   if (!hostPin) return;
 
   if (unsub.rosterParticipants) { unsub.rosterParticipants(); unsub.rosterParticipants = null; }
   unsub.rosterParticipants = onSnapshot(participantsColRef(hostPin), (snap) => {
-    console.log('🔥 onSnapshot participants: получихме', snap.docs.length, 'документа');
-    snap.docs.forEach(d => console.log(' -', d.id, (d.data() || {}).name));
     hostParticipants = snap.docs.map(d => ({ uid: d.id, name: (d.data() || {}).name || '' }));
     renderRoster();
   });
@@ -859,8 +888,11 @@ function cssEscape(s) { return (s ?? '').toString().replaceAll('\\', '\\\\').rep
 
 // === WIRE UI ===
 $('btn-load-demo').addEventListener('click', () => {
-  localStorage.setItem('lm_demo_lesson', JSON.stringify(demoLesson));
-  alert('Demo урокът е зареден локално. Натисни Вход.');
+  const templateEl = $('lesson-template');
+  const key = templateEl?.value || 'classbuddy';
+  const selectedTemplate = lessonTemplates[key] || lessonTemplates.classbuddy;
+  localStorage.setItem('lm_demo_lesson', JSON.stringify(selectedTemplate));
+  alert(`Зареден шаблон: ${selectedTemplate.title}. Натисни Вход.`);
 });
 
 $('btn-host-login').addEventListener('click', hostLogin);
