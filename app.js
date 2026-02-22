@@ -85,6 +85,60 @@ const lessonTemplates = {
 };
 
 const demoLesson = lessonTemplates.classbuddy;
+
+
+function parseBuilderSlides(text) {
+  const lines = String(text || '')
+    .split('\n')
+    .map(x => x.trim())
+    .filter(Boolean);
+  const slides = [];
+  for (const line of lines) {
+    const [kindRaw, title = '', body = '', optionsRaw = '', correctRaw = ''] = line.split('|').map(x => (x || '').trim());
+    const kind = (kindRaw || 'content').toLowerCase();
+
+    if (kind === 'mcq') {
+      const options = optionsRaw.split(',').map(x => x.trim()).filter(Boolean);
+      slides.push({ visibility: 'students', layout: 'question', content: { title, text: body, image: '' }, interaction: { kind: 'mcq', options, correct: Number(correctRaw || 0), points: 1 } });
+      continue;
+    }
+    if (kind === 'multi') {
+      const options = optionsRaw.split(',').map(x => x.trim()).filter(Boolean);
+      const correct = correctRaw.split(',').map(x => Number(x.trim())).filter(Number.isFinite);
+      slides.push({ visibility: 'students', layout: 'question', content: { title, text: body, image: '' }, interaction: { kind: 'multi', options, correct, points: 1 } });
+      continue;
+    }
+    if (kind === 'short') {
+      slides.push({ visibility: 'students', layout: 'question', content: { title, text: body, image: '' }, interaction: { kind: 'short', correctText: correctRaw || '', caseSensitive: false, points: 1 } });
+      continue;
+    }
+    if (kind === 'title') {
+      slides.push({ visibility: 'host', layout: 'title', content: { title, subtitle: body, image: '' } });
+      continue;
+    }
+    slides.push({ visibility: 'host', layout: 'content', content: { title, text: body, image: '' } });
+  }
+  return slides;
+}
+
+function buildLessonFromConstructor() {
+  const title = $('builder-lesson-title')?.value?.trim() || 'Моят урок';
+  const raw = $('builder-slides')?.value || '';
+  const slides = parseBuilderSlides(raw);
+  if (!slides.length) {
+    alert('Конструкторът няма валидни слайдове.');
+    return;
+  }
+
+  const customLesson = {
+    title,
+    theme: lessonTemplates.classbuddy.theme,
+    slides
+  };
+
+  localStorage.setItem('lm_demo_lesson', JSON.stringify(customLesson));
+  alert(`Създаден урок: ${title} (${slides.length} слайда). Натисни Вход.`);
+}
 // === STATE ===
 let currentUser = null;
 let mode = 'welcome';
@@ -709,6 +763,7 @@ async function studentJoin(pin) {
     maxScore: totals.maxScore
   }, { merge: true });
   setMode('student');
+  $('student-final').classList.add('hidden');
   attachStudentListeners(pin);
   showStudentWaiting('Гледай екрана отпред…');
 }
@@ -917,9 +972,85 @@ function attachStudentListeners(pin) {
   }
 }
 
-// --- final screen and scoring helpers omitted in this shortened file ---
-// NOTE: The rest of your original file continues below unchanged,
-// but we add missing normalizeText to prevent runtime errors.
+
+
+async function computeStudentFinalStats(pin) {
+  const slides = studentLesson?.slides || [];
+  const interactive = [];
+  for (let i = 0; i < slides.length; i++) if (isInteractiveSlide(slides[i])) interactive.push({ idx: i, slide: slides[i] });
+
+  let score = 0;
+  let correctCount = 0;
+  let maxScore = 0;
+
+  for (const item of interactive) {
+    const pts = Number(item.slide?.interaction?.points ?? 1);
+    maxScore += Number.isFinite(pts) ? pts : 1;
+    const aSnap = await getDoc(answerDocRef(pin, item.idx, auth.currentUser.uid));
+    if (!aSnap.exists()) continue;
+    const ans = aSnap.data();
+    const earned = earnedPoints(item.slide, ans);
+    score += earned;
+    if (isAnswerCorrect(item.slide, ans)) correctCount += 1;
+  }
+
+  return { score, correctCount, totalQuestions: interactive.length, maxScore };
+}
+
+async function submitStudentFinal(pin, stats) {
+  await setDoc(participantDocRef(pin, auth.currentUser.uid), {
+    score: Number(stats.score.toFixed(2)),
+    correctCount: stats.correctCount,
+    totalQuestions: stats.totalQuestions,
+    maxScore: Number(stats.maxScore.toFixed(2)),
+    finishedAt: serverTimestamp()
+  }, { merge: true });
+}
+
+async function showStudentFinal(pin) {
+  const stats = await computeStudentFinalStats(pin);
+  $('student-waiting').classList.add('hidden');
+  $('student-interaction').classList.remove('hidden');
+  $('student-q-body').innerHTML = '';
+  $('student-feedback').classList.add('hidden');
+  $('student-sent').classList.add('hidden');
+  $('student-phase').textContent = 'Край';
+  $('student-q-title').textContent = 'Тестът приключи';
+  $('student-q-sub').textContent = 'Това е личният ти резултат.';
+  $('student-final').classList.remove('hidden');
+
+  $('final-score').textContent = String(Number(stats.score.toFixed(2)));
+  $('final-max').textContent = String(Number(stats.maxScore.toFixed(2)));
+  $('final-correct').textContent = String(stats.correctCount);
+  $('final-total').textContent = String(stats.totalQuestions);
+
+  const pct = stats.maxScore > 0 ? Math.round((stats.score / stats.maxScore) * 100) : 0;
+  $('final-bar').style.width = `${Math.max(0, Math.min(100, pct))}%`;
+  $('final-msg').textContent = pct >= 80 ? 'Отлично представяне! 🎉' : pct >= 50 ? 'Добра работа! Продължавай!' : 'Имаш напредък — опитай отново!';
+
+  const sendStatus = $('final-submit-status');
+  try {
+    await submitStudentFinal(pin, stats);
+    sendStatus.textContent = 'Резултатът е изпратен успешно.';
+  } catch (e) {
+    sendStatus.textContent = 'Резултатът не се изпрати. Натисни бутона отдолу.';
+  }
+
+  const resendBtn = $('btn-final-resend');
+  if (!resendBtn.dataset.bound) {
+    resendBtn.dataset.bound = '1';
+    resendBtn.addEventListener('click', async () => {
+      try {
+        await submitStudentFinal(pin, stats);
+        sendStatus.textContent = 'Резултатът е изпратен успешно.';
+      } catch (e) {
+        sendStatus.textContent = 'Грешка при изпращане. Опитай пак.';
+      }
+    });
+  }
+}
+
+// --- Final screen and scoring helpers ---
 
 function normalizeText(s, caseSensitive) {
   const t = (s ?? '').toString().trim();
@@ -1009,7 +1140,15 @@ function escapeAttr(s) { return escapeHtml(s); }
 function cssEscape(s) { return (s ?? '').toString().replaceAll('\\', '\\\\').replaceAll('"', '\\"'); }
 
 // === WIRE UI ===
-$('btn-load-demo').addEventListener('click', () => {
+function on(id, event, handler) {
+  const el = $(id);
+  if (!el) return;
+  el.addEventListener(event, handler);
+}
+
+on('btn-build-lesson', 'click', buildLessonFromConstructor);
+
+on('btn-load-demo', 'click', () => {
   const templateEl = $('lesson-template');
   const key = templateEl?.value || 'classbuddy';
   const selectedTemplate = lessonTemplates[key] || lessonTemplates.classbuddy;
@@ -1017,35 +1156,44 @@ $('btn-load-demo').addEventListener('click', () => {
   alert(`Зареден шаблон: ${selectedTemplate.title}. Натисни Вход.`);
 });
 
-$('btn-host-login').addEventListener('click', hostLogin);
-$('btn-host-start').addEventListener('click', hostStart);
-$('btn-host-next').addEventListener('click', hostNext);
-$('btn-host-lock').addEventListener('click', hostLock);
-$('btn-host-reveal').addEventListener('click', hostReveal);
-$('btn-host-attn').addEventListener('click', hostToggleAttention);
-$('btn-host-end').addEventListener('click', hostEnd);
+on('btn-host-login', 'click', hostLogin);
+on('btn-host-start', 'click', hostStart);
+on('btn-host-next', 'click', hostNext);
+on('btn-host-lock', 'click', hostLock);
+on('btn-host-reveal', 'click', hostReveal);
+on('btn-host-attn', 'click', hostToggleAttention);
+on('btn-host-end', 'click', hostEnd);
 
-$('btn-host-full').addEventListener('click', async () => {
+on('btn-host-full', 'click', async () => {
   if (!isPresent) await enterPresentMode();
   else await exitPresentMode();
 });
 
-$('present-next').addEventListener('click', hostNext);
-$('present-lock').addEventListener('click', hostLock);
-$('present-reveal').addEventListener('click', hostReveal);
-$('present-attn').addEventListener('click', hostToggleAttention);
-$('present-exit').addEventListener('click', exitPresentMode);
+on('present-next', 'click', hostNext);
+on('present-lock', 'click', hostLock);
+on('present-reveal', 'click', hostReveal);
+on('present-attn', 'click', hostToggleAttention);
+on('present-exit', 'click', exitPresentMode);
 
-$('btn-student-submit').addEventListener('click', studentSubmitAnswer);
+on('btn-student-submit', 'click', studentSubmitAnswer);
 
-$('btn-student-join').addEventListener('click', async () => {
-  const pin = $('student-pin').value.trim();
+on('btn-student-join', 'click', async () => {
+  const pin = $('student-pin')?.value?.trim();
   if (!pin) return alert('Въведи PIN.');
   await ensureAnonAuth();
   await studentJoin(pin);
 });
 
-$('btn-student-leave').addEventListener('click', async () => {
+on('btn-final-exit', 'click', async () => {
+  cleanupSubs();
+  try { await signOut(auth); } catch (e) { }
+  studentPin = null;
+  studentLessonId = null;
+  studentLesson = null;
+  setMode('welcome');
+});
+
+on('btn-student-leave', 'click', async () => {
   cleanupSubs();
   try { await signOut(auth); } catch (e) { }
   studentPin = null;
@@ -1059,5 +1207,5 @@ window.addEventListener('DOMContentLoaded', () => {
   setMode('welcome');
   setStatus('ready');
   const p = new URLSearchParams(window.location.search).get('pin');
-  if (p) $('student-pin').value = p;
+  if (p && $('student-pin')) $('student-pin').value = p;
 });
