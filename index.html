@@ -3,18 +3,20 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>LessonMaster Live (v3.6.6 • final submit)</title>
+  <title>LessonMaster Live • Demo Studio v2</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body { -webkit-font-smoothing: antialiased; }
-    .card { border: 1px solid rgb(226 232 240); border-radius: 1.5rem; background: white; box-shadow: 0 10px 25px rgba(0,0,0,.06); }
-    .btn { border-radius: 1rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+    .card { border: 1px solid rgb(226 232 240); border-radius: 1.25rem; background: white; box-shadow: 0 6px 20px rgba(15,23,42,.06); }
+    .btn { border-radius: .9rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
     .btn:active { transform: translateY(1px); }
     .muted { color: rgb(100 116 139); }
     .pill { border: 1px solid rgb(226 232 240); border-radius: 999px; padding: .25rem .6rem; font-size: .75rem; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; color: rgb(100 116 139); }
     .opt { border: 2px solid rgb(226 232 240); border-radius: 1rem; padding: 1rem; font-weight: 950; background: white; }
     .opt.selected { border-color: rgb(2 132 199); background: rgb(240 249 255); }
     .disabled { opacity: .6; pointer-events: none; }
+    .clean-note { border: 1px solid rgb(219 234 254); background: rgb(239 246 255); color: rgb(30 64 175); border-radius: .9rem; padding: .75rem .9rem; font-size: .78rem; font-weight: 800; }
+    details > summary::-webkit-details-marker { display:none; }
     code { background: rgb(241 245 249); padding: .1rem .25rem; border-radius: .4rem; }
 
     /* Host slide surface */
@@ -166,14 +168,19 @@
 
     <header class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
       <div>
-        <div class="text-3xl font-black tracking-tight">LessonMaster Live (v3.6.2)</div>
-        <div class="muted font-bold text-sm">Lock → Reveal • Тихо точкуване • Мотивиращ финал • Без класиране по време на теста</div>
+        <div class="text-3xl font-black tracking-tight">LessonMaster Live</div>
+        <div class="muted font-bold text-sm">Демо студио за интерактивни презентации с режим учител/ученик.</div>
       </div>
       <div class="flex gap-2 flex-wrap">
+        <span class="pill" title="Версия на интерфейса">UI: v2</span>
         <span id="mode-pill" class="pill">MODE: —</span>
         <span id="status-pill" class="pill">STATUS: —</span>
       </div>
     </header>
+
+    <div class="clean-note">
+      Ако виждаш стара визия: натисни <b>Ctrl+F5</b> (или Cmd+Shift+R на Mac), за да презаредиш без кеш.
+    </div>
 
     <!-- WELCOME -->
     <section id="screen-welcome" class="grid md:grid-cols-2 gap-6">
@@ -211,11 +218,32 @@
 
         <div class="grid grid-cols-2 gap-3">
           <button id="btn-host-login" class="btn py-4 bg-sky-600 hover:bg-sky-500 text-white">Вход</button>
-          <button id="btn-load-demo" class="btn py-4 bg-white/10 hover:bg-white/15 text-white">Demo урок</button>
+          <button id="btn-load-demo" class="btn py-4 bg-white/10 hover:bg-white/15 text-white">Зареди шаблон</button>
+        </div>
+
+        <div class="space-y-2">
+          <label class="text-xs font-black uppercase tracking-widest text-slate-400">Шаблон за слайдове</label>
+          <select id="lesson-template" class="w-full p-3 rounded-xl bg-white/10 border border-white/10 font-bold">
+            <option value="classbuddy">ClassBuddy стил: Как работи</option>
+            <option value="quick-quiz">Quick Quiz (5 въпроса)</option>
+            <option value="science">Природни науки</option>
+          </select>
         </div>
 
         <div class="text-slate-300 text-xs font-bold">
           Classroom Mode: “Fullscreen” прави екрана за проектор/дъска.
+        </div>
+
+        <div class="pt-2 border-t border-white/10 space-y-2">
+          <div class="text-xs font-black uppercase tracking-widest text-slate-400">Конструктор (демо)</div>
+          <input id="builder-lesson-title" class="w-full p-3 rounded-xl bg-white/10 border border-white/10 font-bold" placeholder="Заглавие на урок" value="Моят интерактивен урок" />
+          <textarea id="builder-slides" class="w-full p-3 rounded-xl bg-white/10 border border-white/10 font-bold min-h-[120px]" placeholder="По един слайд на ред: Тип|Заглавие|Текст|Опции|Правилен
+Пример: mcq|Въпрос 1|Кое е вярно?|A,B,C,D|1">title|Въведение|Тема и цели||
+mcq|Въпрос 1|Кое е вярно?|A,B,C,D|1
+multi|Въпрос 2|Маркирай верните|A,B,C,D|0,2
+short|Въпрос 3|Напиши ключова дума||пример
+content|Обобщение|Най-важното от урока||</textarea>
+          <button id="btn-build-lesson" class="btn w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white">Създай от конструктора</button>
         </div>
       </div>
     </section>
@@ -239,20 +267,26 @@
           </div>
 
           <div class="flex gap-2 flex-wrap items-center">
-            <label class="pill">TEXT
-              <select id="host-font-preset" class="ml-2 bg-slate-100 rounded-full px-3 py-1 font-black text-xs" title="Размер за зала/проектор">
-                <option value="standard">Standard</option>
-                <option value="large" selected>Large</option>
-                <option value="xlarge">XL</option>
-              </select>
-            </label>
             <button id="btn-host-start" class="btn px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white">Start</button>
             <button id="btn-host-next" class="btn px-6 py-3 bg-slate-800 hover:bg-black text-white">Next</button>
-            <button id="btn-host-lock" class="btn px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white">Lock</button>
-            <button id="btn-host-reveal" class="btn px-6 py-3 bg-sky-600 hover:bg-sky-700 text-white">Reveal</button>
-            <button id="btn-host-attn" class="btn px-6 py-3 bg-violet-600 hover:bg-violet-700 text-white">Attention</button>
-            <button id="btn-host-full" class="btn px-6 py-3 bg-slate-200 hover:bg-slate-300 text-slate-900">Fullscreen</button>
-            <button id="btn-host-end" class="btn px-6 py-3 bg-rose-500 hover:bg-rose-600 text-white">End</button>
+
+            <details class="group">
+              <summary class="btn px-5 py-3 bg-slate-200 hover:bg-slate-300 text-slate-900 cursor-pointer list-none">Още</summary>
+              <div class="mt-2 p-3 bg-slate-50 border border-slate-200 rounded-xl flex flex-wrap gap-2 max-w-xl">
+                <label class="pill">TEXT
+                  <select id="host-font-preset" class="ml-2 bg-slate-100 rounded-full px-3 py-1 font-black text-xs" title="Размер за зала/проектор">
+                    <option value="standard">Standard</option>
+                    <option value="large" selected>Large</option>
+                    <option value="xlarge">XL</option>
+                  </select>
+                </label>
+                <button id="btn-host-lock" class="btn px-5 py-3 bg-amber-500 hover:bg-amber-600 text-white">Lock</button>
+                <button id="btn-host-reveal" class="btn px-5 py-3 bg-sky-600 hover:bg-sky-700 text-white">Reveal</button>
+                <button id="btn-host-attn" class="btn px-5 py-3 bg-violet-600 hover:bg-violet-700 text-white">Attention</button>
+                <button id="btn-host-full" class="btn px-5 py-3 bg-slate-200 hover:bg-slate-300 text-slate-900">Fullscreen</button>
+                <button id="btn-host-end" class="btn px-5 py-3 bg-rose-500 hover:bg-rose-600 text-white">End</button>
+              </div>
+            </details>
           </div>
         </div>
       </div>
@@ -291,6 +325,15 @@
           <div class="space-y-3">
             <div class="flex items-center justify-between">
               <div class="muted font-black uppercase tracking-widest text-xs">Ученици</div>
+              <div id="stat-participants" class="text-xl font-black">0</div>
+            </div>
+
+            <div class="flex items-center justify-between">
+              <div class="muted font-black uppercase tracking-widest text-xs">Отговорили</div>
+              <div id="stat-answered" class="text-xl font-black">0</div>
+            </div>
+          </div>
+
           <!-- Roster (teacher-only control; visible on projector but subtle) -->
           <div class="mt-5 border-t border-slate-200 pt-4">
             <div class="flex items-center justify-between">
@@ -306,16 +349,7 @@
             </div>
           </div>
 
-              <div id="stat-participants" class="text-xl font-black">0</div>
-            </div>
-
-            <div class="flex items-center justify-between">
-              <div class="muted font-black uppercase tracking-widest text-xs">Отговорили</div>
-              <div id="stat-answered" class="text-xl font-black">0</div>
-            </div>
-          </div>
-
-        <div class="mt-4 p-3 rounded-2xl bg-amber-50 text-amber-800 font-bold text-xs">Важно: За scoring учителят трябва да има право да <span class="font-black">update</span>-ва participants/{uid}. Ако видиш permissions грешка, кажи ми и ще ти дам точните Rules (2 реда).</div>
+          <div class="clean-note mt-4">Демо режим: за оценяване учителят трябва да има право за update на participants/{uid} във Firestore Rules.</div>
 
           <div class="mt-4 border-t pt-4">
             <div class="muted font-black uppercase tracking-widest text-xs mb-2">MCQ / Multi</div>
