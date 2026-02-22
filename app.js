@@ -713,6 +713,128 @@ async function studentJoin(pin) {
   showStudentWaiting('Гледай екрана отпред…');
 }
 
+
+let studentCurrentSlide = null;
+let studentCurrentSlideIdx = -1;
+let studentDraftAnswer = null;
+
+function showStudentWaiting(msg) {
+  $('student-waiting-msg').textContent = msg || 'Гледай екрана отпред…';
+  $('student-waiting').classList.remove('hidden');
+  $('student-interaction').classList.add('hidden');
+}
+
+function updateStudentSubmitState({ hasAnswer, phase }) {
+  const btn = $('btn-student-submit');
+  const locked = phase === 'locked' || phase === 'reveal' || phase === 'done';
+  btn.classList.toggle('disabled', locked);
+  btn.disabled = locked;
+  if (locked) {
+    btn.textContent = 'Заключено';
+    return;
+  }
+  btn.textContent = hasAnswer ? 'Редактирай отговор' : 'Потвърди';
+}
+
+function showStudentInteraction(slide, phase, slideIdx) {
+  studentCurrentSlide = slide;
+  studentCurrentSlideIdx = slideIdx;
+  studentDraftAnswer = null;
+
+  $('student-waiting').classList.add('hidden');
+  $('student-interaction').classList.remove('hidden');
+  $('student-feedback').classList.add('hidden');
+  $('student-sent').classList.add('hidden');
+
+  $('student-q-title').textContent = slide?.content?.title || 'Въпрос';
+  $('student-q-sub').textContent = slide?.content?.text || 'Избери отговор.';
+  $('student-phase').textContent = phase === 'answering' ? 'Отговаряне' : (phase || '—');
+
+  const body = $('student-q-body');
+  const kind = slide?.interaction?.kind;
+
+  if (kind === 'mcq') {
+    const opts = slide.interaction.options || [];
+    body.innerHTML = `<div class="grid gap-3">${opts.map((t, i) => `<button type="button" class="opt text-left" data-i="${i}">${escapeHtml(t)}</button>`).join('')}</div>`;
+    body.querySelectorAll('.opt').forEach((el) => {
+      el.addEventListener('click', () => {
+        body.querySelectorAll('.opt').forEach(x => x.classList.remove('selected'));
+        el.classList.add('selected');
+        studentDraftAnswer = { answerIndex: Number(el.dataset.i), kind: 'mcq' };
+      });
+    });
+  } else if (kind === 'multi') {
+    const opts = slide.interaction.options || [];
+    body.innerHTML = `<div class="grid gap-3">${opts.map((t, i) => `<button type="button" class="opt text-left" data-i="${i}">${escapeHtml(t)}</button>`).join('')}</div>`;
+    body.querySelectorAll('.opt').forEach((el) => {
+      el.addEventListener('click', () => {
+        el.classList.toggle('selected');
+        const picked = [...body.querySelectorAll('.opt.selected')].map(x => Number(x.dataset.i)).sort((a,b)=>a-b);
+        studentDraftAnswer = { answerIndexes: picked, kind: 'multi' };
+      });
+    });
+  } else if (kind === 'short') {
+    body.innerHTML = `<textarea id="student-short" class="w-full min-h-[110px] p-4 rounded-2xl border-2 border-slate-200 font-bold outline-none focus:border-sky-600" placeholder="Напиши отговор..."></textarea>`;
+    body.querySelector('#student-short').addEventListener('input', (e) => {
+      studentDraftAnswer = { answerText: e.target.value.trim(), kind: 'short' };
+    });
+  } else if (kind === 'labeling') {
+    const labels = (slide.interaction.targets || []).map(t => t.text);
+    const image = slide?.content?.image || '';
+    body.innerHTML = `
+      ${image ? `<div class="img-frame mb-4" style="height:260px;"><img src="${escapeAttr(image)}" alt=""></div>` : ''}
+      <div id="labeling-targets" class="relative rounded-2xl border border-slate-200 bg-slate-50 p-4 min-h-[220px]"></div>
+      <div class="mt-4 flex flex-wrap gap-2" id="labeling-chips">${labels.map((t, i) => `<button type="button" class="label-chip" data-label="${escapeAttr(t)}" data-i="${i}">${escapeHtml(t)}</button>`).join('')}</div>`;
+    const tWrap = body.querySelector('#labeling-targets');
+    (slide.interaction.targets || []).forEach((t, i) => {
+      const el = document.createElement('button');
+      el.type = 'button';
+      el.className = 'label-target';
+      el.dataset.i = String(i);
+      el.textContent = String(i + 1);
+      el.style.left = `${Number(t.x) || 50}%`;
+      el.style.top = `${Number(t.y) || 50}%`;
+      tWrap.appendChild(el);
+    });
+    let selected = null;
+    const map = {};
+    body.querySelectorAll('.label-chip').forEach(ch => ch.addEventListener('click', () => {
+      body.querySelectorAll('.label-chip').forEach(x => x.classList.remove('selected'));
+      ch.classList.add('selected');
+      selected = ch.dataset.label;
+    }));
+    body.querySelectorAll('.label-target').forEach(target => target.addEventListener('click', () => {
+      if (!selected) return;
+      const idx = Number(target.dataset.i);
+      map[idx] = selected;
+      target.classList.add('filled');
+      target.textContent = selected;
+      studentDraftAnswer = { labelingMap: { ...map }, kind: 'labeling' };
+    }));
+  } else {
+    body.innerHTML = '<div class="muted font-bold">Неподдържан тип въпрос.</div>';
+  }
+
+  updateStudentSubmitState({ hasAnswer: false, phase });
+}
+
+async function studentSubmitAnswer() {
+  if (!studentPin || !studentCurrentSlide || studentCurrentSlideIdx < 0) return;
+  if (!studentDraftAnswer) return alert('Моля, въведи отговор първо.');
+  if (studentPhase === 'locked' || studentPhase === 'reveal' || studentPhase === 'done') return;
+
+  const payload = {
+    uid: auth.currentUser.uid,
+    name: $('student-name').value.trim() || 'Ученик',
+    kind: studentCurrentSlide.interaction.kind,
+    submittedAt: serverTimestamp(),
+    ...studentDraftAnswer
+  };
+
+  await setDoc(answerDocRef(studentPin, studentCurrentSlideIdx, auth.currentUser.uid), payload, { merge: true });
+  $('student-sent').classList.remove('hidden');
+}
+
 function attachStudentListeners(pin) {
   cleanupSubs();
 
@@ -913,6 +1035,8 @@ $('present-lock').addEventListener('click', hostLock);
 $('present-reveal').addEventListener('click', hostReveal);
 $('present-attn').addEventListener('click', hostToggleAttention);
 $('present-exit').addEventListener('click', exitPresentMode);
+
+$('btn-student-submit').addEventListener('click', studentSubmitAnswer);
 
 $('btn-student-join').addEventListener('click', async () => {
   const pin = $('student-pin').value.trim();
