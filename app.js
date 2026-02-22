@@ -74,6 +74,25 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
     function getCachedLesson(lessonId) { try { const raw = localStorage.getItem(lessonCacheKey(lessonId)); return raw ? JSON.parse(raw) : null; } catch(e) { return null; } }
 
     let unsub = { session: null, participants: null, answers: null, answerMine: null };
+    // --- Participants listener (fix: always listen to the correct pin) ---
+ function setParticipantsListener(pin) {
+      const p = String(pin || "");
+  if (!p) return; // no pin yet → don't start
+
+  // stop previous listener (if any)
+  setParticipantsListener(pin);
+  
+
+  unsub.participants = onSnapshot(participantsColRef(p), (psnap) => {
+    hostParticipantsCount = psnap.size;
+
+    const el = $('stat-participants');
+    if (el) el.textContent = String(psnap.size);
+
+    // If you have any UI that depends on who is present, update it here
+    try { syncPresentBadges(); } catch (e) {}
+  });
+}
     
 // === UI HELPERS ===
     const $ = (id) => document.getElementById(id);
@@ -355,6 +374,8 @@ rosterLocked = true;
 
       unsub.session = onSnapshot(sessionDocRef(pin), async (snap) => {
         const d = snap.data();
+          // Fix: pin must come from the session doc (source of truth)
+        if (data?.pin) setParticipantsListener(data.pin);
         if (!d) return;
 
         hostLessonId = d.lessonId || hostLessonId;
