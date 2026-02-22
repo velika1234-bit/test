@@ -26,28 +26,48 @@ async function loadReport() {
   if (!sSnap.exists()) { setStatus('Сесията не е намерена.'); return; }
   const session = sSnap.data();
 
-  const lesson = session.lesson || null;
-  const slides = lesson?.slides || [];
-  const interactive = slides.map((s, idx)=>({s, idx})).filter(x=>isInteractiveSlide(x.s));
+  // ✅ 1) Вземаме slides от session.lesson (ако е embed-нат),
+  // иначе зареждаме от lessons/{lessonId}
+  let slides = [];
+  if (session?.lesson?.slides && Array.isArray(session.lesson.slides)) {
+    slides = session.lesson.slides;
+  } else {
+    const lessonId = session.lessonId;
+    if (!lessonId) { setStatus('Сесията няма lessonId.'); return; }
+
+    setStatus('Зареждане на урок…');
+    const lSnap = await getDoc(lessonsDocRef(lessonId));
+    if (!lSnap.exists()) { setStatus('Урокът не е намерен.'); return; }
+    slides = (lSnap.data()?.slides) || [];
+  }
+
+  const interactive = slides
+    .map((s, idx) => ({ s, idx }))
+    .filter(x => isInteractiveSlide(x.s));
 
   setStatus('Зареждане на участници…');
   const pSnap = await getDocs(participantsColRef(pin));
-  const participants = pSnap.docs.map(d=>({ uid:d.id, ...d.data() })).sort((a,b)=>(a.name||'').localeCompare(b.name||'', 'bg'));
+  const participants = pSnap.docs
+    .map(d => ({ uid: d.id, ...d.data() }))
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'bg'));
 
   setStatus('Зареждане на отговори…');
   const answersBySlide = {};
   for (const q of interactive) {
     const aSnap = await getDocs(answersColRef(pin, q.idx));
-    answersBySlide[q.idx] = Object.fromEntries(aSnap.docs.map(d=>[d.id, d.data()]));
+    answersBySlide[q.idx] = Object.fromEntries(aSnap.docs.map(d => [d.id, d.data()]));
   }
 
   const rows = participants.map(p => {
     let score = 0, max = 0, answered = 0, correct = 0;
     const detail = [];
+
     for (const q of interactive) {
       const ans = answersBySlide[q.idx]?.[p.uid] || null;
       const s = q.s;
+
       const { ok, points, maxPts } = scoreAnswer(s, ans);
+
       max += maxPts;
       if (ans) answered++;
       if (ok === true) correct++;
@@ -55,12 +75,13 @@ async function loadReport() {
 
       detail.push({
         idx: q.idx,
-        title: s.content?.title || ('Въпрос ' + (q.idx+1)),
+        title: s.content?.title || ('Въпрос ' + (q.idx + 1)),
         kind: s.interaction.kind,
         ans, ok, points, maxPts,
         correctRef: s.interaction
       });
     }
+
     return { ...p, score, max, answered, total: interactive.length, correct, detail };
   });
 
