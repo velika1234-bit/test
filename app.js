@@ -280,6 +280,13 @@ async function hostLogin() {
     hostUid: auth.currentUser.uid,
     title: hostLesson.title,
     lessonId: hostLessonId,
+
+        // 🔥 snapshot of the lesson for students (avoids extra reads/race conditions)
+        lesson: {
+          title: hostLesson.title,
+          theme: hostLesson.theme || {},
+          slides: hostLesson.slides || []
+        },
     activeSlideIdx: -1,
     phase: 'waiting',          // waiting | active | answering | locked | reveal | done
     attention: false,
@@ -694,9 +701,15 @@ function attachStudentListeners(pin) {
       showStudentWaiting('👀 Внимание към екрана отпред…');
       return;
     }
-    if (!studentLessonId) { showStudentWaiting('Зареждам урок…'); return; }
+    if (!studentLessonId && !(d.lesson?.slides?.length)) { showStudentWaiting('Зареждам урок…'); return; }
 
-    await ensureStudentLessonLoaded(studentLessonId);
+    // ✅ Prefer lesson snapshot from session (no extra reads / no race)
+        if (d.lesson?.slides?.length) {
+          studentLesson = d.lesson;
+          studentLessonId = studentLessonId || d.lessonId || 'inline';
+        } else {
+          await ensureStudentLessonLoaded(studentLessonId);
+        }
     const slide = (studentLesson?.slides && studentActiveSlideIdx >= 0) ? studentLesson.slides[studentActiveSlideIdx] : null;
 
     if (!slide || !isInteractiveSlide(slide)) {
