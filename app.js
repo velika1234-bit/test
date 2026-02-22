@@ -73,135 +73,17 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
     function cacheLesson(lessonId, lessonObj) { try { localStorage.setItem(lessonCacheKey(lessonId), JSON.stringify(lessonObj)); } catch(e) {} }
     function getCachedLesson(lessonId) { try { const raw = localStorage.getItem(lessonCacheKey(lessonId)); return raw ? JSON.parse(raw) : null; } catch(e) { return null; } }
 
-    let unsub = { session: null, participants: null, answers: null, answerMine: null };
+    let unsub = { session: null, participants: null, answers: null, answerMine: null, rosterParticipants: null, rosterAnswers: null };
     // --- Participants listener (fix: always listen to the correct pin) ---
  function setParticipantsListener(pin) {
       const p = String(pin || "");
-  if (!p) return; // no pin yet → don't start
+      if (!p) return; // no pin yet → don't start
 
-  // stop previous listener (if any)
-  setParticipantsListener(pin);
-  
-
-  unsub.participants = onSnapshot(participantsColRef(p), (psnap) => {
-    hostParticipantsCount = psnap.size;
-
-    const el = $('stat-participants');
-    if (el) el.textContent = String(psnap.size);
-
-    // If you have any UI that depends on who is present, update it here
-    try { syncPresentBadges(); } catch (e) {}
-  });
-}
-    
-// === UI HELPERS ===
-    const $ = (id) => document.getElementById(id);
-    const show = (id) => $(id).classList.remove('hidden');
-    const hide = (id) => $(id).classList.add('hidden');
-    const setPill = (id, text) => $(id).textContent = text;
-
-    function setMode(nextMode) {
-      mode = nextMode;
-      hide('screen-welcome'); hide('screen-host'); hide('screen-student');
-      if (nextMode === 'welcome') show('screen-welcome');
-      if (nextMode === 'host') show('screen-host');
-      if (nextMode === 'student') show('screen-student');
-      setPill('mode-pill', `MODE: ${nextMode.toUpperCase()}`);
-    }
-
-
-    // --- ROSTER (who answered) ---
-    function setRosterCollapsed(next) {
-      rosterCollapsed = next;
-      const body = document.getElementById('roster-body');
-      if (body) body.style.display = rosterCollapsed ? 'none' : 'block';
-    }
-
-    function safeText(s) {
-      return String(s || '').replace(/[<>&"]/g, ch => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[ch]));
-    }
-
-    function renderRoster() {
-      const grid = document.getElementById('roster-grid');
-      const totalEl = document.getElementById('roster-total-count');
-      const ansEl = document.getElementById('roster-answered-count');
-      if (!grid || !totalEl || !ansEl) return;
-
-      const sorted = [...hostParticipants].sort((a, b) => {
-        const aAnswered = answeredUids.has(a.uid);
-        const bAnswered = answeredUids.has(b.uid);
-        if (aAnswered === bAnswered) return (a.name || '').localeCompare(b.name || '', 'bg');
-        return aAnswered ? 1 : -1; // non-answered first
-      });
-
-      let answered = 0;
-      const items = sorted.map(p => {
-        const isAnswered = answeredUids.has(p.uid);
-        const status = rosterLocked ? (isAnswered ? 'answered' : 'missed') : (isAnswered ? 'answered' : 'pending');
-        if (isAnswered) answered++;
-
-        const badge = status === 'answered' ? '🟢' : status === 'pending' ? '🔴' : '⚪';
-        const cls =
-          status === 'answered' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' :
-          status === 'pending' ? 'bg-rose-50 border-rose-200 text-rose-800' :
-          'bg-slate-50 border-slate-200 text-slate-600';
-
-        return `<div class="px-3 py-2 rounded-xl border ${cls} text-xs font-black flex items-center gap-2">
-          <span>${badge}</span><span class="truncate">${safeText(p.name || 'Ученик')}</span>
-        </div>`;
-      }).join('');
-
-      grid.innerHTML = items || `<div class="col-span-full text-center text-slate-400 font-bold py-6">Няма участници още.</div>`;
-      totalEl.textContent = String(hostParticipants.length);
-      ansEl.textContent = String(answered);
-    }
-
-    function resetRosterForSlide() {
-      answeredUids = new Set();
-      rosterLocked = false;
-      renderRoster();
-    }
-
-    function bindRosterUI() {
-      const btn = document.getElementById('roster-toggle');
-      if (btn && !btn.dataset.bound) {
-        btn.dataset.bound = '1';
-        btn.addEventListener('click', () => setRosterCollapsed(!rosterCollapsed));
+      // stop previous listener (if any)
+      if (unsub.participants) {
+        try { unsub.participants(); } catch (e) {}
+        unsub.participants = null;
       }
-      setRosterCollapsed(false);
-    }
-
-    function attachRosterListeners() {
-        console.log('attachRosterListeners called, hostPin =', hostPin);
-        if (!hostPin) return;
-
-      if (unsub.rosterParticipants) { unsub.rosterParticipants(); unsub.rosterParticipants = null; }
-      unsub.rosterParticipants = onSnapshot(participantsColRef(hostPin), (snap) => {
-        console.log('🔥 onSnapshot participants: получихме', snap.docs.length, 'документа');
-        snap.docs.forEach(d => console.log(' -', d.id, d.data().name));
-        hostParticipants = snap.docs.map(d => ({ uid: d.id, name: (d.data() || {}).name || '' }));
-        renderRoster();
-      });
-
-      attachRosterAnswersListener(hostActiveSlideIdx);
-    }
-
-    function attachRosterAnswersListener(slideIdx) {
-      if (!hostPin) return;
-      if (unsub.rosterAnswers) { unsub.rosterAnswers(); unsub.rosterAnswers = null; }
-
-      if (slideIdx == null || slideIdx < 0) {
-        answeredUids = new Set();
-        renderRoster();
-        return;
-      }
-
-      unsub.rosterAnswers = onSnapshot(answersColRef(hostPin, slideIdx), (snap) => {
-        const set = new Set();
-        snap.docs.forEach(d => set.add(d.id));
-        answeredUids = set;
-        renderRoster();
-      });
     }
 
 
@@ -337,7 +219,7 @@ rosterLocked = true;
 
     function cleanupSubs() {
       Object.values(unsub).forEach(fn => { try { fn && fn(); } catch(e) {} });
-      unsub = { session: null, participants: null, answers: null, answerMine: null };
+      unsub = { session: null, participants: null, answers: null, answerMine: null, rosterParticipants: null, rosterAnswers: null };
     }
 
     async function ensureHostLessonLoaded(lessonId) {
@@ -374,9 +256,10 @@ rosterLocked = true;
 
       unsub.session = onSnapshot(sessionDocRef(pin), async (snap) => {
         const d = snap.data();
-          // Fix: pin must come from the session doc (source of truth)
-        if (data?.pin) setParticipantsListener(data.pin);
         if (!d) return;
+
+        // Fix: pin must come from the session doc (source of truth)
+        if (d.pin) setParticipantsListener(d.pin);
 
         hostLessonId = d.lessonId || hostLessonId;
         hostActiveSlideIdx = d.activeSlideIdx ?? -1;
@@ -1039,6 +922,12 @@ rosterLocked = true;
     }
 
     function normalizeShort(s, caseSensitive) {
+      const t = (s ?? '').toString().trim();
+      return caseSensitive ? t : t.toLowerCase();
+    }
+
+
+    function normalizeText(s, caseSensitive) {
       const t = (s ?? '').toString().trim();
       return caseSensitive ? t : t.toLowerCase();
     }
