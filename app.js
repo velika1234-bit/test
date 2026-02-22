@@ -86,39 +86,119 @@ const lessonTemplates = {
 
 const demoLesson = lessonTemplates.classbuddy;
 
+let builderDraftSlides = [];
+
+function parsePairs(raw) {
+  return String(raw || '')
+    .split(';')
+    .map((x) => x.trim())
+    .filter(Boolean)
+    .map((pair) => {
+      const [left = '', right = ''] = pair.split('->').map((x) => x.trim());
+      return { left, right };
+    })
+    .filter((x) => x.left && x.right);
+}
+
+function parseGroupSpec(raw) {
+  const [catsRaw = '', labelsRaw = ''] = String(raw || '').split('::');
+  const categories = catsRaw.split(',').map((x) => x.trim()).filter(Boolean);
+  const labels = labelsRaw.split(',').map((x) => x.trim()).filter(Boolean);
+  return { categories, labels };
+}
+
+function parseAreaSpec(raw) {
+  const nums = String(raw || '').split(',').map((x) => Number(x.trim()));
+  const [x = 50, y = 50, r = 15] = nums;
+  return { x, y, r };
+}
+
+function buildSlideFromLine(line) {
+  const [kindRaw, title = '', body = '', optionsRaw = '', correctRaw = ''] = line.split('|').map(x => (x || '').trim());
+  const kind = (kindRaw || 'content').toLowerCase();
+
+  if (kind === 'mcq') {
+    const options = optionsRaw.split(',').map(x => x.trim()).filter(Boolean);
+    return { visibility: 'students', layout: 'question', content: { title, text: body, image: '' }, interaction: { kind: 'mcq', options, correct: Number(correctRaw || 0), points: 1 } };
+  }
+  if (kind === 'multi') {
+    const options = optionsRaw.split(',').map(x => x.trim()).filter(Boolean);
+    const correct = correctRaw.split(',').map(x => Number(x.trim())).filter(Number.isFinite);
+    return { visibility: 'students', layout: 'question', content: { title, text: body, image: '' }, interaction: { kind: 'multi', options, correct, points: 1 } };
+  }
+  if (kind === 'short') {
+    return { visibility: 'students', layout: 'question', content: { title, text: body, image: '' }, interaction: { kind: 'short', correctText: correctRaw || '', caseSensitive: false, points: 1 } };
+  }
+  if (kind === 'match') {
+    return { visibility: 'students', layout: 'question', content: { title, text: body, image: '' }, interaction: { kind: 'match', pairs: parsePairs(optionsRaw), points: 1 } };
+  }
+  if (kind === 'group') {
+    const { categories, labels } = parseGroupSpec(optionsRaw);
+    return { visibility: 'students', layout: 'question', content: { title, text: body, image: '' }, interaction: { kind: 'group', categories, labels, points: 1 } };
+  }
+  if (kind === 'draw') {
+    const area = parseAreaSpec(correctRaw);
+    return { visibility: 'students', layout: 'question', content: { title, text: body, image: optionsRaw || '' }, interaction: { kind: 'draw', targetArea: area, points: 1 } };
+  }
+  if (kind === 'hotspot') {
+    const area = parseAreaSpec(correctRaw);
+    return { visibility: 'students', layout: 'question', content: { title, text: body, image: optionsRaw || '' }, interaction: { kind: 'hotspot', targetArea: area, points: 1 } };
+  }
+  if (kind === 'video') {
+    return { visibility: 'host', layout: 'content', content: { title, text: body, image: '', video: optionsRaw || '' } };
+  }
+  if (kind === 'title') {
+    return { visibility: 'host', layout: 'title', content: { title, subtitle: body, image: '' } };
+  }
+  return { visibility: 'host', layout: 'content', content: { title, text: body, image: optionsRaw || '' } };
+}
 
 function parseBuilderSlides(text) {
   const lines = String(text || '')
     .split('\n')
     .map(x => x.trim())
     .filter(Boolean);
-  const slides = [];
-  for (const line of lines) {
-    const [kindRaw, title = '', body = '', optionsRaw = '', correctRaw = ''] = line.split('|').map(x => (x || '').trim());
-    const kind = (kindRaw || 'content').toLowerCase();
+  return lines.map(buildSlideFromLine).filter(Boolean);
+}
 
-    if (kind === 'mcq') {
-      const options = optionsRaw.split(',').map(x => x.trim()).filter(Boolean);
-      slides.push({ visibility: 'students', layout: 'question', content: { title, text: body, image: '' }, interaction: { kind: 'mcq', options, correct: Number(correctRaw || 0), points: 1 } });
-      continue;
-    }
-    if (kind === 'multi') {
-      const options = optionsRaw.split(',').map(x => x.trim()).filter(Boolean);
-      const correct = correctRaw.split(',').map(x => Number(x.trim())).filter(Number.isFinite);
-      slides.push({ visibility: 'students', layout: 'question', content: { title, text: body, image: '' }, interaction: { kind: 'multi', options, correct, points: 1 } });
-      continue;
-    }
-    if (kind === 'short') {
-      slides.push({ visibility: 'students', layout: 'question', content: { title, text: body, image: '' }, interaction: { kind: 'short', correctText: correctRaw || '', caseSensitive: false, points: 1 } });
-      continue;
-    }
-    if (kind === 'title') {
-      slides.push({ visibility: 'host', layout: 'title', content: { title, subtitle: body, image: '' } });
-      continue;
-    }
-    slides.push({ visibility: 'host', layout: 'content', content: { title, text: body, image: '' } });
+function addBuilderSlide() {
+  const kind = $('builder-kind')?.value || 'content';
+  const title = $('builder-slide-title')?.value?.trim() || 'Нов слайд';
+  const text = $('builder-slide-text')?.value?.trim() || '';
+  const media = $('builder-slide-media')?.value?.trim() || '';
+  const extra = $('builder-slide-extra')?.value?.trim() || '';
+
+  let line = '';
+  if (kind === 'title') line = `title|${title}|${text}||`;
+  else if (kind === 'content') line = `content|${title}|${text}|${media}|`;
+  else if (kind === 'video') line = `video|${title}|${text}|${media}|`;
+  else if (kind === 'mcq') line = `mcq|${title}|${text}|${extra}|0`;
+  else if (kind === 'multi') line = `multi|${title}|${text}|${extra}|0,1`;
+  else if (kind === 'short') line = `short|${title}|${text}||пример`;
+  else if (kind === 'match') line = `match|${title}|${text}|${extra || 'Термин 1->Картинка 1;Термин 2->Картинка 2'}|`;
+  else if (kind === 'group') line = `group|${title}|${text}|${extra || 'Жива природа,Нежива природа::дъб,камък,врабче,река'}|`;
+  else if (kind === 'draw') line = `draw|${title}|${text}|${media}|${extra || '50,50,15'}`;
+  else if (kind === 'hotspot') line = `hotspot|${title}|${text}|${media}|${extra || '50,50,15'}`;
+
+  const raw = $('builder-slides')?.value || '';
+  $('builder-slides').value = raw ? `${raw}\n${line}` : line;
+  refreshBuilderList();
+}
+
+function refreshBuilderList() {
+  const slides = parseBuilderSlides($('builder-slides')?.value || '');
+  builderDraftSlides = slides;
+  const list = $('builder-list');
+  if (!list) return;
+  if (!slides.length) {
+    list.innerHTML = '<div class="muted">Няма добавени слайдове.</div>';
+    return;
   }
-  return slides;
+  list.innerHTML = slides.map((s, i) => {
+    const kind = s?.interaction?.kind || s.layout;
+    const ttl = escapeHtml(s?.content?.title || 'Слайд');
+    return `<div class="py-1 border-b border-white/10">${i + 1}. <span class="uppercase">${escapeHtml(kind)}</span> — ${ttl}</div>`;
+  }).join('');
 }
 
 function buildLessonFromConstructor() {
@@ -160,6 +240,79 @@ let isPresent = false;
 const lessonCacheKey = (lessonId) => `lm_lesson_cache_${lessonId}`;
 function cacheLesson(lessonId, lessonObj) { try { localStorage.setItem(lessonCacheKey(lessonId), JSON.stringify(lessonObj)); } catch (e) { } }
 function getCachedLesson(lessonId) { try { const raw = localStorage.getItem(lessonCacheKey(lessonId)); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
+
+const TEACHER_LESSONS_KEY = 'lm_teacher_lessons_v1';
+const AVATARS = ['🦊','🐼','🦁','🐯','🐸','🐧','🐨','🦉','🐙','🦄','🐬','🐢'];
+
+function loadTeacherLessons() {
+  try {
+    const raw = localStorage.getItem(TEACHER_LESSONS_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) { return []; }
+}
+
+function saveTeacherLessons(items) {
+  localStorage.setItem(TEACHER_LESSONS_KEY, JSON.stringify(items || []));
+}
+
+function renderTeacherLessonsSelect() {
+  const sel = $('teacher-saved-lessons');
+  if (!sel) return;
+  const items = loadTeacherLessons();
+  if (!items.length) {
+    sel.innerHTML = '<option value="">Няма запазени уроци</option>';
+    return;
+  }
+  sel.innerHTML = items.map((it) => `<option value="${escapeAttr(it.id)}">${escapeHtml(it.title || 'Без име')} (${(it.slides || []).length} слайда)</option>`).join('');
+}
+
+function saveCurrentBuilderLesson() {
+  const title = $('builder-lesson-title')?.value?.trim() || 'Нов урок';
+  const slides = parseBuilderSlides($('builder-slides')?.value || '');
+  if (!slides.length) return alert('Няма слайдове за запазване.');
+  const items = loadTeacherLessons();
+  const id = `lesson_${Date.now().toString(36)}`;
+  items.unshift({ id, title, slides, theme: lessonTemplates.classbuddy.theme, updatedAt: Date.now() });
+  saveTeacherLessons(items.slice(0, 50));
+  renderTeacherLessonsSelect();
+  alert('Урокът е запазен в Учителски панел.');
+}
+
+function loadSavedLessonToBuilder() {
+  const sel = $('teacher-saved-lessons');
+  const id = sel?.value;
+  if (!id) return;
+  const items = loadTeacherLessons();
+  const found = items.find((x) => x.id === id);
+  if (!found) return;
+  $('builder-lesson-title').value = found.title || 'Урок';
+  const lines = (found.slides || []).map(slideToBuilderLine).join('
+');
+  $('builder-slides').value = lines;
+  refreshBuilderList();
+  localStorage.setItem('lm_demo_lesson', JSON.stringify({ title: found.title, slides: found.slides || [], theme: found.theme || lessonTemplates.classbuddy.theme }));
+  alert('Зареден е запазеният урок.');
+}
+
+function slideToBuilderLine(slide) {
+  const kind = slide?.interaction?.kind || slide?.layout || 'content';
+  const c = slide?.content || {};
+  if (kind === 'mcq') return `mcq|${c.title || ''}|${c.text || ''}|${(slide.interaction?.options || []).join(',')}|${slide.interaction?.correct ?? 0}`;
+  if (kind === 'multi') return `multi|${c.title || ''}|${c.text || ''}|${(slide.interaction?.options || []).join(',')}|${(slide.interaction?.correct || []).join(',')}`;
+  if (kind === 'short') return `short|${c.title || ''}|${c.text || ''}||${slide.interaction?.correctText || ''}`;
+  if (kind === 'match') return `match|${c.title || ''}|${c.text || ''}|${(slide.interaction?.pairs || []).map((p) => `${p.left}->${p.right}`).join(';')}|`;
+  if (kind === 'group') return `group|${c.title || ''}|${c.text || ''}|${(slide.interaction?.categories || []).join(',')}::${(slide.interaction?.labels || []).join(',')}|`;
+  if (kind === 'draw' || kind === 'hotspot') {
+    const area = slide.interaction?.targetArea || {};
+    return `${kind}|${c.title || ''}|${c.text || ''}|${c.image || ''}|${area.x || 50},${area.y || 50},${area.r || 15}`;
+  }
+  if (c.video) return `video|${c.title || ''}|${c.text || ''}|${c.video}|`;
+  if (slide?.layout === 'title') return `title|${c.title || ''}|${c.subtitle || ''}||`;
+  return `content|${c.title || ''}|${c.text || ''}|${c.image || ''}|`;
+}
+
+function pickRandomAvatar() { return AVATARS[Math.floor(Math.random() * AVATARS.length)]; }
 
 let unsub = {
   session: null,
@@ -313,7 +466,7 @@ function computeLessonTotals(lesson) {
 }
 
 function isInteractiveSlide(slide) {
-  return !!(slide && slide.visibility !== 'host' && slide.interaction && ['mcq', 'multi', 'short', 'labeling'].includes(slide.interaction.kind));
+  return !!(slide && slide.visibility !== 'host' && slide.interaction && ['mcq', 'multi', 'short', 'labeling', 'match', 'draw', 'group', 'hotspot'].includes(slide.interaction.kind));
 }
 
 function getFontScale(theme) {
@@ -599,6 +752,7 @@ function renderSlideHTML(slide, big) {
           <div class="img-frame mt-8" style="height:${big ? '420px' : '280px'};">
             <img src="${escapeAttr(c.image)}" alt="">
           </div>` : ''}
+        ${c.video ? `<div class="mt-8 rounded-2xl overflow-hidden border border-slate-200"><iframe src="${escapeAttr(c.video)}" style="width:100%;height:${big ? '360px' : '240px'};" allowfullscreen></iframe></div>` : ''}
       </div>
     `;
   }
@@ -695,6 +849,13 @@ function renderStatsForSlide(slide, answers) {
     $('stat-labeling').textContent = `${answers.length} отговора (преглед по-късно)`;
     return;
   }
+
+  if (kind === 'match' || kind === 'group' || kind === 'draw' || kind === 'hotspot') {
+    $('stat-mcq').innerHTML = `<div class="muted font-bold">—</div>`;
+    $('stat-short').innerHTML = `<div class="muted font-bold">—</div>`;
+    $('stat-labeling').textContent = `${answers.length} отговора`;
+    return;
+  }
 }
 
 // === PRESENTATION MODE ===
@@ -744,8 +905,10 @@ async function ensureStudentLessonLoaded(lessonId) {
 async function studentJoin(pin) {
   await ensureAnonAuth();
   const name = $('student-name').value.trim() || 'Ученик';
+  const avatar = pickRandomAvatar();
   studentPin = pin;
-  $('student-pin-active').textContent = pin;
+  if ($('student-pin-active')) $('student-pin-active').textContent = pin;
+  if ($('student-avatar')) $('student-avatar').textContent = avatar;
 
   // Load lessonId from session first so we can compute totals
   const sSnap0 = await getDoc(sessionDocRef(pin));
@@ -756,6 +919,7 @@ async function studentJoin(pin) {
   const totals = computeLessonTotals(studentLesson);
   await setDoc(participantDocRef(pin, auth.currentUser.uid), {
     name,
+    avatar,
     joinedAt: serverTimestamp(),
     score: 0,
     correctCount: 0,
@@ -765,7 +929,7 @@ async function studentJoin(pin) {
   setMode('student');
   $('student-final').classList.add('hidden');
   attachStudentListeners(pin);
-  showStudentWaiting('Гледай екрана отпред…');
+  showStudentWaiting('Гледай към учителя.');
 }
 
 
@@ -774,7 +938,7 @@ let studentCurrentSlideIdx = -1;
 let studentDraftAnswer = null;
 
 function showStudentWaiting(msg) {
-  $('student-waiting-msg').textContent = msg || 'Гледай екрана отпред…';
+  $('student-waiting-msg').textContent = msg || 'Гледай към учителя.';
   $('student-waiting').classList.remove('hidden');
   $('student-interaction').classList.add('hidden');
 }
@@ -866,6 +1030,38 @@ function showStudentInteraction(slide, phase, slideIdx) {
       target.textContent = selected;
       studentDraftAnswer = { labelingMap: { ...map }, kind: 'labeling' };
     }));
+  } else if (kind === 'match') {
+    const pairs = slide?.interaction?.pairs || [];
+    body.innerHTML = `<div class="grid gap-2">${pairs.map((p, i) => `<div class="p-2 rounded-xl border border-slate-200 bg-slate-50"><div class="font-black text-sm">${i + 1}. ${escapeHtml(p.left)}</div><input class="w-full mt-1 p-2 rounded-lg border border-slate-200" data-match="${i}" placeholder="Въведи съвпадение"></div>`).join('')}</div>`;
+    body.querySelectorAll('input[data-match]').forEach((inp) => inp.addEventListener('input', () => {
+      const map = {};
+      body.querySelectorAll('input[data-match]').forEach((x) => { map[x.dataset.match] = x.value.trim(); });
+      studentDraftAnswer = { pairMap: map, kind: 'match' };
+    }));
+  } else if (kind === 'group') {
+    const cats = slide?.interaction?.categories || [];
+    const labels = slide?.interaction?.labels || [];
+    body.innerHTML = `<div class="grid gap-3">${cats.map((c) => `<div class="p-2 rounded-xl border border-slate-200"><div class="font-black mb-2">${escapeHtml(c)}</div><div class="flex flex-wrap gap-2">${labels.map((l, i) => `<button type="button" class="opt px-3 py-2" data-l="${i}" data-c="${escapeAttr(c)}">${escapeHtml(l)}</button>`).join('')}</div></div>`).join('')}</div>`;
+    const groups = {};
+    body.querySelectorAll('button[data-l]').forEach((btn) => btn.addEventListener('click', () => {
+      const label = labels[Number(btn.dataset.l)] || '';
+      const cat = btn.dataset.c || '';
+      groups[label] = cat;
+      btn.classList.add('selected');
+      studentDraftAnswer = { groupMap: groups, kind: 'group' };
+    }));
+  } else if (kind === 'draw' || kind === 'hotspot') {
+    const image = slide?.content?.image || '';
+    body.innerHTML = `${image ? `<div class="img-frame mb-3" style="height:280px;"><img id="student-hit-img" src="${escapeAttr(image)}" alt=""></div>` : '<div class="muted">Липсва изображение.</div>'}<div class="muted text-xs font-bold">Натисни върху изображението, за да маркираш зона.</div>`;
+    const img = body.querySelector('#student-hit-img');
+    if (img) {
+      img.addEventListener('click', (e) => {
+        const rect = img.getBoundingClientRect();
+        const x = ((e.clientX - rect.left) / rect.width) * 100;
+        const y = ((e.clientY - rect.top) / rect.height) * 100;
+        studentDraftAnswer = { click: { x, y }, kind };
+      });
+    }
   } else {
     body.innerHTML = '<div class="muted font-bold">Неподдържан тип въпрос.</div>';
   }
@@ -1109,6 +1305,26 @@ function isAnswerCorrect(slide, ans) {
     return targets.length > 0;
   }
 
+  if (kind === 'match') {
+    const pairs = Array.isArray(slide?.interaction?.pairs) ? slide.interaction.pairs : [];
+    const map = (ans && ans.pairMap) || {};
+    if (!pairs.length) return false;
+    return pairs.every((p, i) => normalizeText(map[i], false) === normalizeText(p.right, false));
+  }
+
+  if (kind === 'group') {
+    return !!(ans && ans.groupMap && Object.keys(ans.groupMap).length);
+  }
+
+  if (kind === 'draw' || kind === 'hotspot') {
+    const area = slide?.interaction?.targetArea || {};
+    const click = ans?.click || {};
+    const dx = Number(click.x) - Number(area.x);
+    const dy = Number(click.y) - Number(area.y);
+    const dist = Math.sqrt((dx * dx) + (dy * dy));
+    return Number.isFinite(dist) && dist <= Number(area.r || 0);
+  }
+
   return false;
 }
 
@@ -1146,7 +1362,11 @@ function on(id, event, handler) {
   el.addEventListener(event, handler);
 }
 
+on('btn-builder-add', 'click', addBuilderSlide);
 on('btn-build-lesson', 'click', buildLessonFromConstructor);
+on('btn-save-lesson', 'click', saveCurrentBuilderLesson);
+on('btn-load-saved-lesson', 'click', loadSavedLessonToBuilder);
+on('btn-refresh-lessons', 'click', renderTeacherLessonsSelect);
 
 on('btn-load-demo', 'click', () => {
   const templateEl = $('lesson-template');
@@ -1156,6 +1376,10 @@ on('btn-load-demo', 'click', () => {
   alert(`Зареден шаблон: ${selectedTemplate.title}. Натисни Вход.`);
 });
 
+
+refreshBuilderList();
+renderTeacherLessonsSelect();
+on('builder-slides', 'input', refreshBuilderList);
 on('btn-host-login', 'click', hostLogin);
 on('btn-host-start', 'click', hostStart);
 on('btn-host-next', 'click', hostNext);
@@ -1193,14 +1417,6 @@ on('btn-final-exit', 'click', async () => {
   setMode('welcome');
 });
 
-on('btn-student-leave', 'click', async () => {
-  cleanupSubs();
-  try { await signOut(auth); } catch (e) { }
-  studentPin = null;
-  studentLessonId = null;
-  studentLesson = null;
-  setMode('welcome');
-});
 
 window.addEventListener('DOMContentLoaded', () => {
   bindRosterUI();
