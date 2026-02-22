@@ -228,6 +228,18 @@
         <div class="text-slate-300 text-xs font-bold">
           Classroom Mode: “Fullscreen” прави екрана за проектор/дъска.
         </div>
+
+        <div class="pt-2 border-t border-white/10 space-y-2">
+          <div class="text-xs font-black uppercase tracking-widest text-slate-400">Конструктор (демо)</div>
+          <input id="builder-lesson-title" class="w-full p-3 rounded-xl bg-white/10 border border-white/10 font-bold" placeholder="Заглавие на урок" value="Моят интерактивен урок" />
+          <textarea id="builder-slides" class="w-full p-3 rounded-xl bg-white/10 border border-white/10 font-bold min-h-[120px]" placeholder="По един слайд на ред: Тип|Заглавие|Текст|Опции|Правилен
+Пример: mcq|Въпрос 1|Кое е вярно?|A,B,C,D|1">title|Въведение|Тема и цели||
+mcq|Въпрос 1|Кое е вярно?|A,B,C,D|1
+multi|Въпрос 2|Маркирай верните|A,B,C,D|0,2
+short|Въпрос 3|Напиши ключова дума||пример
+content|Обобщение|Най-важното от урока||</textarea>
+          <button id="btn-build-lesson" class="btn w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white">Създай от конструктора</button>
+        </div>
       </div>
     </section>
 
