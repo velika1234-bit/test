@@ -1,5 +1,5 @@
 // app/reports.js
-import { sessionDocRef, participantsColRef, answersColRef, lessonsDocRef } from './firebase.js';
+import { sessionDocRef, participantsColRef, answersColRef } from './firebase.js';
 import { watchAuth, login, register, logout } from './auth.js';
 import { getDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { escapeHtml, isInteractiveSlide, scoreAnswer, uidShort } from './shared.js';
