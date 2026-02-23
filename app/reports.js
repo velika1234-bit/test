@@ -178,4 +178,3 @@ function bindUI() {
 
 watchAuth((u)=>{ currentUser=u; requireAuthView(); });
 bindUI();
-}
