@@ -21,6 +21,7 @@ async function loadReport() {
   const pin = $('pin').value.trim();
   if (!pin) return alert('Въведи PIN.');
   setStatus('Зареждане на сесия…');
+}
 
   const sSnap = await getDoc(sessionDocRef(pin));
   if (!sSnap.exists()) { setStatus('Сесията не е намерена.'); return; }
