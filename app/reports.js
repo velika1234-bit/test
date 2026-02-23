@@ -54,9 +54,9 @@ async function loadReport() {
   setStatus('Зареждане на отговори…');
   const answersBySlide = {};
   for (const q of interactive) {
-    const aSnap = await getDocs(answersColRef(pin, q.idx));
-    answersBySlide[q.idx] = Object.fromEntries(aSnap.docs.map(d => [d.id, d.data()]));
-  }
+  const slideNo = q.idx + 1; // 1-базирано, както е в Firestore (responses/1, responses/3, ...)
+  const aSnap = await getDocs(answersColRef(pin, slideNo));
+  answersBySlide[q.idx] = Object.fromEntries(aSnap.docs.map(d => [d.id, d.data()]));
 
   const rows = participants.map(p => {
     let score = 0, max = 0, answered = 0, correct = 0;
