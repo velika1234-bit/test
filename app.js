@@ -94,7 +94,11 @@ function parsePairs(raw) {
     .map((x) => x.trim())
     .filter(Boolean)
     .map((pair) => {
-      const [left = '', right = ''] = pair.split('->').map((x) => x.trim());
+      const normalized = pair
+        .replace('=>', '->')
+        .replace('→', '->')
+        .replace('—>', '->');
+      const [left = '', right = ''] = normalized.split('->').map((x) => x.trim());
       return { left, right };
     })
     .filter((x) => x.left && x.right);
@@ -1032,10 +1036,11 @@ function showStudentInteraction(slide, phase, slideIdx) {
     }));
   } else if (kind === 'match') {
     const pairs = slide?.interaction?.pairs || [];
-    body.innerHTML = `<div class="grid gap-2">${pairs.map((p, i) => `<div class="p-2 rounded-xl border border-slate-200 bg-slate-50"><div class="font-black text-sm">${i + 1}. ${escapeHtml(p.left)}</div><input class="w-full mt-1 p-2 rounded-lg border border-slate-200" data-match="${i}" placeholder="Въведи съвпадение"></div>`).join('')}</div>`;
-    body.querySelectorAll('input[data-match]').forEach((inp) => inp.addEventListener('input', () => {
+    const rightPool = [...new Set(pairs.map((p) => p.right).filter(Boolean))];
+    body.innerHTML = `<div class="grid gap-2">${pairs.map((p, i) => `<div class="p-2 rounded-xl border border-slate-200 bg-slate-50"><div class="font-black text-sm mb-2">${i + 1}. ${escapeHtml(p.left)}</div><select class="w-full p-2 rounded-lg border border-slate-200" data-match="${i}"><option value="">Избери съвпадение…</option>${rightPool.map((r) => `<option value="${escapeAttr(r)}">${escapeHtml(r)}</option>`).join('')}</select></div>`).join('')}</div>`;
+    body.querySelectorAll('select[data-match]').forEach((sel) => sel.addEventListener('change', () => {
       const map = {};
-      body.querySelectorAll('input[data-match]').forEach((x) => { map[x.dataset.match] = x.value.trim(); });
+      body.querySelectorAll('select[data-match]').forEach((x) => { map[x.dataset.match] = x.value.trim(); });
       studentDraftAnswer = { pairMap: map, kind: 'match' };
     }));
   } else if (kind === 'group') {
