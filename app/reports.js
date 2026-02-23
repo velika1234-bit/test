@@ -86,7 +86,7 @@ async function loadReport() {
   });
 
   renderSummary(pin, session, rows, interactive);
-}
+
 
 function renderSummary(pin, session, rows, interactive) {
   $('report-title').textContent = `Рапорт за PIN ${pin}`;
